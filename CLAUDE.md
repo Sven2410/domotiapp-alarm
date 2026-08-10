@@ -438,9 +438,28 @@ Vindplaatsen in `docs/fase-3c/RAPPORT.md`.
 40. **De weergavenaam van een MA-item is niet altijd een zoekterm.** `somafm://` geeft
     `"SomaFM: Beat Blender"` terug, en zoeken op die string in MA levert **nul**
     treffers; `"Beat Blender"` levert er drie. Providerspecifiek: `radiobrowser://` en
-    iTunes-podcasts zijn zelf-vindbaar, SomaFM niet. Dat maakt de zoekroute uit SPEC
-    11.2 voor die provider zelf-verslaand — zie de openstaande beslissing in de tabel
-    hieronder, en `docs/fase-3c/RAPPORT.md`.
+    iTunes-podcasts zijn zelf-vindbaar, SomaFM niet.
+
+    **Dit heeft de URI-controle van SPEC 11.2 gekost** (fase 3c-bis): de opgeslagen naam
+    komt van MA, dus een controle die op die naam zoekt kan per definitie zijn eigen
+    geluid niet terugvinden. De les die breder geldt: **een identificator die je van een
+    dienst terugkrijgt is niet automatisch een identificator die je aan die dienst kunt
+    teruggeven.** Voordat je iets opslaat om er later mee te zoeken, toets of het
+    **zelf-vindbaar** is — zoek op wat je opslaat en kijk of je het terugvindt.
+
+41. **Een controle die vals alarm slaat is erger dan geen controle.** De afweging die
+    fase 3c-bis maakte, in één regel: het faalgeval verschuift van "de wekker gaat niet
+    af" naar "de wekker ging af maar was stil", en het tweede wordt achteraf opgemerkt
+    terwijl het eerste onherstelbaar is. Weeg bij elke noodrem niet alleen wat hij vangt
+    maar ook **hoe vaak hij onterecht afgaat** — en meet dat, want hier was het 100 %
+    voor een hele provider terwijl de SPEC-tekst het als zeldzaam risico beschreef.
+
+42. **`blocking=False` verbergt de fout, het versnelt niets wat je mag weten.**
+    `core.py:2953-2959`: HA verpakt een niet-blokkerende service-aanroep in
+    `_run_service_call_catch_exceptions` en geeft `None` terug — de exceptie bereikt de
+    integratie **nooit**. Elke terugval of foutmelding die op die aanroep staat, vervalt
+    daarmee stil. Nagelopen in fase 3c-bis voor `play_media`, dat 2,1–2,6 s blokkeert;
+    die twee seconden zijn de prijs van weten dát het lukte.
 
 36. **Positieve controles vangen de mutaties die een functie volledig
     uitschakelen.** Een test die alleen op falen let, komt door een implementatie
@@ -534,7 +553,8 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 2b | De tien open vragen gesloten en sectie 21 verwijderd. `last_failure` hernoemd naar `last_message` met een `severity`. `radio_mode` en de URI-controle doorgeschoven naar fase 3, met beide takken uitgeschreven | gemerged |
 | 3a | De server-side laag zonder klok: `store.py` met de kapotte-data-scheiding, `validatie.py` en `volgende.py` (beide puur), `entiteiten.py` met de labelfiltering, en de negen WebSocket-commando's. 112 Python-tests, 13 mutaties nagelopen | gemerged |
 | 3b | De planner: `planner.py` (plannen, inhaalslag, respijtvenster, herplannen), `afvuren.py` als naad met 3c, `meldingen.py` met de drie kanalen en de repair issues die 3a openliet. 137 Python-tests, 17 mutaties nagelopen, live gemeten afwijking 12 ms | gemerged |
-| **3c** | **Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py` (available + URI-controle met de omkering van 11.2.1), `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 213 Python-tests, 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost (oorzaak: de `my`-integratie, niet `external_url`) en de livecontrole live gedaan: **+2,153 s afwijking, oploop 1,006 s per stap, audio bewezen aan de speakerkant. En één blokkerende bevinding: de URI-controle van SPEC 11.2 houdt een werkende SomaFM-wekker tegen** | **deze ronde** |
+| 3c | Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py` (available + URI-controle met de omkering van 11.2.1), `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 213 Python-tests, 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost (oorzaak: de `my`-integratie, niet `external_url`) en de livecontrole live gedaan: **+2,153 s afwijking, oploop 1,006 s per stap, audio bewezen aan de speakerkant. En één blokkerende bevinding: de URI-controle van SPEC 11.2 houdt een werkende SomaFM-wekker tegen | in PR #8 |
+| **3c-bis** | **De URI-controle vervalt (SPEC 11.2 herschreven, 11.2.1 vervallen, 11.2.2 met een nieuw criterium). De SomaFM-wekker die in 3c niet afging, gaat nu af met 0 van 87 s stilte. 212 tests, 5 mutaties. `play_media` blokkeert 2,1–2,6 s en dat is niet weg te nemen zonder de foutdetectie te verliezen (`core.py:2953-2959`)** | **deze ronde, PR #8** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -651,7 +671,8 @@ verwerking):
 |---|---|---|
 | **`music/item_by_uri` als voorkeursroute** zodra MA hem via een gepubliceerde service beschikbaar stelt (SPEC 11.2.2) | `websocket.py` / noodrem | na een MA-release; iemand moet dit volgen |
 | **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
-| **BLOKKEREND — de URI-controle van SPEC 11.2 maakt van een werkende SomaFM-wekker een stille.** Gemeten in fase 3c: de opgeslagen naam `"SomaFM: Beat Blender"` geeft **0** treffers in MA's eigen zoekopdracht, `"Beat Blender"` geeft er 3. De controle concludeert "geluid bestaat niet meer" en de wekker gaat niet af. Providerspecifiek: `radiobrowser://` en podcasts zijn zelf-vindbaar, `somafm://` niet. Code en SPEC zijn **niet** gewijzigd — de implementatie doet wat SPEC voorschrijft, het defect zit in het ontwerp. Drie richtingen staan in het rapport; `music/item_by_uri` (SPEC 11.2.2) is de kandidaat, en deze bevinding verzwaart die afweging | `noodrem.py` / SPEC 11.2 | **beslissing van de eigenaar, vóór een klant** |
+| **De volume-oploop begint 2,1–2,6 s te laat** doordat `play_media` blokkeert tot MA de stream heeft opgezet. Niet-blokkerend aanroepen kan niet: `core.py:2953-2959` vangt de exceptie binnen HA af, en dan vervallen de `radio_mode`-terugval én de foutmelding. De oploop eerder starten verandert SPEC 9.1 en de betekenis van het `started`-event. **Aanbeveling die niet gebouwd is:** de oploop laten *inhalen* — begin op de stap die bij de verstreken tijd hoort. Meting ligt vast in SPEC 20.1 punt 9 | `afvuren.py` / SPEC 9.1, 9.3 | **beslissing van de eigenaar** |
+| **De tekst van SPEC 11.7 bij `sound_gone` stelt het zekerder dan de code weet**: "het gekozen geluid bestaat niet meer" terwijl er alleen vaststaat dat het niet startte. De soort is juist, de formulering claimt te veel. `"kon niet gestart worden"` zou nauwkeuriger zijn | SPEC 11.7 | **eigenaar**, woordkeuze |
 | `getCardSize()` ontbreekt; masonry niet gemeten | de kaart | 4 |
 | `panel: true` niet aangeraakt | de kaart | 4 of later |
 

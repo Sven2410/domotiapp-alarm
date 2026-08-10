@@ -4,9 +4,11 @@ Er was in fase 3b **niets** dat afspeelde: `afvuren.py` deed alleen de boekhoudi
 Elke test hier legt dus nieuw gedrag vast; er valt niets te bewaken wat er al was.
 
 **Wat er gemockt wordt en wat niet.** Alleen de vier HA-services van andere
-integraties (`music_assistant.play_media`, `music_assistant.search`,
-`media_player.volume_set`, `media_player.media_stop`, `light.turn_on`) — de grens van
-dit product. Van onze eigen code wordt niets vervangen: de volgorde, de clamping, de
+integraties (`music_assistant.play_media`, `media_player.volume_set`,
+`media_player.media_stop`, `light.turn_on`) — de grens van dit product.
+`music_assistant.search` staat er nog steeds tussen, maar hoort in het **afvuurpad**
+niet meer aangeroepen te worden: dat is sinds fase 3c-bis een assertie in plaats van een
+verwachting. Van onze eigen code wordt niets vervangen: de volgorde, de clamping, de
 `radio_mode`-terugval en het terugzetten van het volume worden allemaal afgelezen uit
 één lijst met werkelijke aanroepen in werkelijke volgorde (`Speelhuis.aanroepen`).
 
@@ -195,9 +197,11 @@ async def test_de_acht_stappen_gebeuren_in_de_voorgeschreven_volgorde(
     await vuur(hass, registry_id)
 
     namen = huis.namen()
-    # stap 1 (noodrem), 3 (volume 0), 4 (lamp), 5 (geluid) — in deze orde.
-    assert namen[:4] == [
-        "music_assistant.search",
+    # stap 3 (volume 0), 4 (lamp), 5 (geluid) — in deze orde. Stap 1 (de noodrem) is
+    # sinds fase 3c-bis alleen nog een `hass.states.get` en levert dus geen aanroep op;
+    # dat er géén `music_assistant.search` meer tussen staat is precies de wijziging, en
+    # heeft zijn eigen test (`test_er_wordt_geen_uri_controle_meer_gedaan`).
+    assert namen[:3] == [
         "media_player.volume_set",
         "light.turn_on",
         "music_assistant.play_media",
@@ -246,7 +250,7 @@ async def test_de_stoptimer_en_de_tweede_noodrem_worden_gezet(
 
 
 # =======================================================================
-# 2 en 3. De noodrem vooraf (SPEC 11.1 en 11.2)
+# 2. De noodrem vooraf (SPEC 11.1), en dat er GEEN URI-controle meer is
 # =======================================================================
 
 
@@ -345,77 +349,112 @@ async def test_zonder_music_assistant_meldt_de_wekker_dat_en_niet_de_speaker(
     assert "Music Assistant" in bericht(hass, registry_id)["text"]
 
 
-async def test_een_verdwenen_uri_laat_de_wekker_niet_afgaan(
+async def test_er_wordt_geen_uri_controle_meer_gedaan(
     hass: HomeAssistant, hass_storage: dict
 ) -> None:
-    """NIEUW GEDRAG. Verplicht geval 3.
+    """NIEUW GEDRAG (SPEC 11.2, fase 3c-bis). Verplicht geval van taak B.
 
-    De zoekopdracht **lukt** en de URI staat er niet tussen: een vastgesteld negatief
-    antwoord. Dan gaat de wekker niet af. Gemeten in fase 0b: MA op schema 31
-    valideert de URI zelf niet — een `://` erin is genoeg — dus zonder deze controle
-    faalt een verouderde URI volkomen stil.
+    Hier stonden drie tests die de URI-controle toetsten. Die controle is vervallen omdat
+    ze vals alarm sloeg voor een hele provider, dus ze zijn **vervangen** in plaats van
+    weggehaald: wat nu vastligt is dat er **géén** `music_assistant.search` in het
+    afvuurpad zit.
+
+    Waarom dat een test verdient en geen simpele verwijdering: de aanroep terugzetten is
+    één regel, en het zou opnieuw dezelfde stille storing opleveren. Deze test faalt op de
+    code van vóór 3c-bis — daar stond `search` op de eerste plaats in `namen[:4]`.
     """
     registry_id, huis = await zet_op(hass, hass_storage)
-    huis.zoekresultaat = {"radios": [{"uri": "somafm://radio/iets-anders", "name": "x"}]}
+    # Laat de nagebootste zoekopdracht bewust NIETS vinden. Vóór 3c-bis was dat genoeg
+    # om de wekker tegen te houden; nu mag het niets uitmaken, want er wordt niet gezocht.
+    huis.zoekresultaat = {}
 
     await vuur(hass, registry_id)
 
-    assert "music_assistant.play_media" not in huis.namen()
-    assert not ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
-    assert bericht(hass, registry_id)["kind"] == meldingen.KIND_SOUND_GONE
-    assert "bestaat niet meer" in bericht(hass, registry_id)["text"]
-
-
-async def test_de_uri_controle_vergelijkt_op_de_uri_en_niet_op_de_naam(
-    hass: HomeAssistant, hass_storage: dict
-) -> None:
-    """NIEUW GEDRAG. SPEC 11.2: een naam identificeert een item niet uniek.
-
-    Gemeten in fase 0b (SPEC 8.2.1): op `"Ghost Stories"` kwamen **twee albums met
-    dezelfde naam van verschillende artiesten** terug. Een controle die op naam
-    vergelijkt zou dus "geldig" zeggen over een URI die dood is. Deze test zet precies
-    dat neer: de naam klopt, de URI niet.
-    """
-    registry_id, huis = await zet_op(hass, hass_storage)
-    huis.zoekresultaat = {
-        "radios": [{"uri": "somafm://radio/een-andere", "name": "SomaFM: Beat Blender"}]
-    }
-
-    await vuur(hass, registry_id)
-
-    assert bericht(hass, registry_id)["kind"] == meldingen.KIND_SOUND_GONE
-
-
-# =======================================================================
-# 4. De omkering van SPEC 11.2.1
-# =======================================================================
-
-
-@pytest.mark.parametrize(
-    "fout", [HomeAssistantError("MA doet niet mee"), TimeoutError(), RuntimeError("stuk")]
-)
-async def test_een_mislukte_uri_controle_laat_de_wekker_wel_afgaan(
-    hass: HomeAssistant, hass_storage: dict, fout
-) -> None:
-    """NIEUW GEDRAG. Verplicht geval 4, en de scherpste omkering in het hele product.
-
-    Overal elders in SPEC 11 geldt: kun je niet vaststellen dat het goed gaat, ga dan
-    niet af. **Hier geldt het omgekeerde.** Een trage zoekopdracht is geen reden om
-    iemand niet te wekken — RadioBrowser was in fase 0b wisselvallig (1 van 6
-    zoekopdrachten lukte), en een controle die de wekker tegenhoudt omdat de controle
-    zelf stuk is, is erger dan geen controle.
-
-    Alle drie de manieren waarop de controle kan stuklopen leveren dezelfde uitkomst
-    op: de wekker gaat af, en er komt **geen** foutmelding over het geluid.
-    """
-    registry_id, huis = await zet_op(hass, hass_storage)
-    huis.zoekfout = fout
-
-    await vuur(hass, registry_id)
-
+    assert "music_assistant.search" not in huis.namen()
     assert "music_assistant.play_media" in huis.namen()
     assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     assert bericht(hass, registry_id) is None
+
+
+async def test_een_somafm_wekker_gaat_af(hass: HomeAssistant, hass_storage: dict) -> None:
+    """NIEUW GEDRAG. Dit is precies het geval dat taak I van fase 3c liet mislukken.
+
+    De opgeslagen naam is `"SomaFM: Beat Blender"` — de naam die MA zelf teruggaf — en
+    die is in MA's zoekindex **niet** te vinden. Vóór 3c-bis concludeerde de URI-controle
+    daaruit dat het geluid niet meer bestond en ging de wekker niet af:
+
+        23:23:00.245 WARNING [afvuren] gaat NIET af:
+                     het geluid 'somafm://radio/beatblender' bestaat niet meer
+
+    De opzet van deze test bootst dat na: de zoekopdracht vindt het geluid **niet**, maar
+    de wekker gaat wél af. Dat is de hele wijziging van deze ronde, in één test.
+    """
+    wekker = volledige_wekker(
+        sound={
+            "uri": "somafm://radio/beatblender",
+            "name": "SomaFM: Beat Blender",
+            "media_type": "radio",
+            "image": None,
+        }
+    )
+    registry_id, huis = await zet_op(hass, hass_storage, wekker)
+    # Zoals MA het werkelijk doet: zoeken op "SomaFM: Beat Blender" geeft nul treffers.
+    huis.zoekresultaat = {}
+
+    await vuur(hass, registry_id)
+
+    data = dict(huis.aanroepen)["music_assistant.play_media"]
+    assert data["media_id"] == "somafm://radio/beatblender"
+    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert bericht(hass, registry_id) is None
+
+
+async def test_een_traag_antwoord_van_ma_houdt_de_wekker_niet_meer_op(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG, en dit was de reden dat SPEC 11.2.1 bestond.
+
+    Vóór 3c-bis moest de code onderscheiden tussen "de URI bestaat niet" (niet afgaan) en
+    "de controle kon niet worden uitgevoerd" (wél afgaan). Dat was het subtielste
+    onderscheid in het product, met een `Uitkomst`-enum van drie waarden om het te dragen.
+
+    Nu is er geen controle die kan mislukken, dus kan een falende of trage zoekopdracht de
+    wekker per constructie niet meer ophouden. Deze test legt dat vast door de zoekopdracht
+    te laten ontploffen: dat mag geen enkel effect hebben.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage)
+    huis.zoekfout = TimeoutError()
+
+    await vuur(hass, registry_id)
+
+    assert "music_assistant.search" not in huis.namen()
+    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert bericht(hass, registry_id) is None
+
+
+async def test_een_mislukt_afspelen_meldt_het_geluid_en_niet_de_speaker(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. De melding `sound_gone` wordt nu door `play_media` gestuurd.
+
+    Vóór 3c-bis stuurde de URI-controle deze soort, en een mislukt `play_media` meldde
+    `speaker_unavailable`. Dat laatste was al twijfelachtig en is nu onwaar: de speaker is
+    een paar milliseconden eerder nog beschikbaar bevonden (stap 1). Wat er dan overblijft
+    is het geluid.
+
+    Het is bovendien een **sterker** signaal dan de zoekopdracht ooit was: de aanroep die
+    het geluid werkelijk zou starten heeft geweigerd.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage)
+    huis.faal.add("music_assistant.play_media")
+
+    await vuur(hass, registry_id)
+
+    melding = bericht(hass, registry_id)
+    assert melding["kind"] == meldingen.KIND_SOUND_GONE
+    assert melding["severity"] == "error"
+    assert "SomaFM: Beat Blender" in melding["text"]
+    assert not ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
 
 
 # =======================================================================
@@ -762,7 +801,11 @@ async def test_als_het_afspelen_ook_zonder_radio_mode_faalt_gaat_de_wekker_niet_
     await vuur(hass, registry_id)
 
     assert not ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
-    assert bericht(hass, registry_id)["severity"] == "error"
+    melding = bericht(hass, registry_id)
+    assert melding["severity"] == "error"
+    # `sound_gone` en niet `speaker_unavailable`: de speaker is bij stap 1 nog
+    # beschikbaar bevonden, dus die melding zou onwaar zijn.
+    assert melding["kind"] == meldingen.KIND_SOUND_GONE
 
 
 # =======================================================================

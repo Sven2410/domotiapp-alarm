@@ -12,21 +12,26 @@ van een spelende speaker was gedood, meldde MA nog steeds `playback_state: "play
 met een **doorlopende** `elapsed_time` van 220,3 s, terwijl `available` op `false`
 stond. De queue weet niet of er iemand luistert. `available` is het signaal.
 
-## De twee controles vallen NIET dezelfde kant op
+## Er is één controle vooraf, en dat is sinds fase 3c-bis een keuze
 
-| Controle | Kan niet vaststellen dat het goed gaat | Gedrag |
-|---|---|---|
-| speaker `available` | speaker of MA is weg | **niet afgaan** |
-| URI bestaat nog | de zoekopdracht zelf faalde | **wél afgaan** (SPEC 11.2.1) |
+Hier stond ook een **URI-controle**: een zoekopdracht op de opgeslagen naam om te zien
+of het geluid nog bestond. Die is vervallen (SPEC 11.2). De reden, gemeten in fase 3c:
+de naam die MA teruggeeft voor een SomaFM-kanaal is `"SomaFM: Beat Blender"`, en zoeken
+op die string in MA geeft **nul** treffers — `"Beat Blender"` geeft er drie. De
+weergavenaam draagt een providerprefix die de zoekindex niet kent, dus de controle kon
+per definitie zijn eigen opgeslagen geluid niet terugvinden. Ze sloeg vals alarm voor een
+hele provider, en een wekker die niet afgaat is het ergste wat dit product kan doen.
 
-Dat is geen inconsistentie. De eerste stelt iets vast over de kans op geluid; de
-tweede over een **hulpaanroep die zelf kan falen** zonder dat er met het geluid iets
-aan de hand is. Een controle die de wekker tegenhoudt omdat de controle stuk is, is
-erger dan geen controle.
+**Wat daarvoor in de plaats komt:** niets vooraf. Het faalgeval verschuift van "de wekker
+gaat niet af" naar "de wekker ging af maar was stil", en dat tweede wordt opgevangen door
+de tweede controle, vijf seconden ná het starten (SPEC 11.3). Die gebruikt
+`controleer_speaker` hieronder en zit in `afvuren._maak_noodrem_achteraf`; hij draagt
+sindsdien meer dan hij deed, want hij is nu het enige net onder een dood geluid.
 
-De twee zien er in code op elkaar lijken. Ze staan hieronder daarom met hun uitkomst
-als **expliciete waarde** (`Uitkomst`) in plaats van als `bool`, zodat "onbekend"
-niet stilletjes als "fout" of "goed" door het leven gaat.
+**Zet hier geen nieuwe voorafgaande controle terug zonder SPEC 11.2.2 te lezen.** De enige
+route die het probleem hierboven niet heeft is `music/item_by_uri`, en die vraagt naar de
+URI in plaats van naar de naam. Zolang MA hem niet als service publiceert, is er geen
+voorafgaande controle.
 
 ## Wat geen enkele controle hier bewijst
 
@@ -38,22 +43,24 @@ systeem en de reden dat de klantdocumentatie zegt: laat de wake-up light meelope
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from enum import Enum
-from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 
 from . import meldingen
-from .const import MA_DOMAIN, SEARCH_LIMIT_MAX, SEARCH_TIMEOUT_SECONDEN
+from .const import MA_DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class Uitkomst(Enum):
-    """De uitkomst van een controle. Drie waarden, want twee is er één te weinig."""
+    """De uitkomst van een controle.
+
+    Twee waarden sinds fase 3c-bis, en dat is minder dan het was — zie het commentaar
+    onderaan deze klasse voordat je er een derde bij zet.
+    """
 
     GOED = "goed"
     """Vastgesteld dat het in orde is."""
@@ -61,9 +68,15 @@ class Uitkomst(Enum):
     FOUT = "fout"
     """Vastgesteld dat het **niet** in orde is. De wekker gaat niet af."""
 
-    ONBEKEND = "onbekend"
-    """De controle kon niet worden uitgevoerd. Wat dat betekent, hangt af van de
-    controle — en juist daarom is dit een eigen waarde en geen `False`."""
+    # Hier stond ONBEKEND: "de controle kon niet worden uitgevoerd". Die waarde bestond
+    # voor de URI-controle, die als enige kon mislukken zonder iets over het geluid te
+    # zeggen. Met het vervallen daarvan (SPEC 11.2) had niemand hem meer nodig, en een
+    # enum-waarde die niemand teruggeeft is dode documentatie.
+    #
+    # Hij komt terug zodra SPEC 11.2.2 in werking treedt: `music/item_by_uri` heeft
+    # drie uitkomsten, waaronder `ProviderUnavailableError` — dat de provider weg is
+    # bewijst niet dat het nummer weg is, dus de wekker gaat dan wél af. Voeg hem op dat
+    # moment terug in plaats van dat geval in een `bool` te persen.
 
 
 def controleer_speaker(hass: HomeAssistant, speaker_entity_id: str) -> tuple[Uitkomst, str]:
@@ -81,8 +94,10 @@ def controleer_speaker(hass: HomeAssistant, speaker_entity_id: str) -> tuple[Uit
     (`helpers/target.py:136-155`) — gemeten in fase 0: nul waarschuwingen. Een wekker
     die zo faalt, faalt volkomen stil. Dit is de stilste faalmodus in het product.
 
-    Er is geen `ONBEKEND` bij deze controle: `hass.states.get` faalt niet, en een
-    ontbrekende state is een vastgestelde fout en geen twijfel.
+    Deze controle kan niet "onbekend" opleveren: `hass.states.get` faalt niet, en een
+    ontbrekende state is een vastgestelde fout en geen twijfel. Hij wordt **twee keer**
+    gebruikt — vóór het afspelen (SPEC 11.1) en vijf seconden erna (SPEC 11.3) — met een
+    verschillende melding bij het tweede geval.
     """
     state = hass.states.get(speaker_entity_id)
     if state is None or state.state == STATE_UNAVAILABLE:
@@ -94,106 +109,3 @@ def controleer_speaker(hass: HomeAssistant, speaker_entity_id: str) -> tuple[Uit
             return Uitkomst.FOUT, meldingen.KIND_MA_UNAVAILABLE
         return Uitkomst.FOUT, meldingen.KIND_SPEAKER_UNAVAILABLE
     return Uitkomst.GOED, ""
-
-
-async def async_controleer_uri(hass: HomeAssistant, geluid: dict[str, Any]) -> Uitkomst:
-    """Bestaat het opgeslagen geluid nog? (SPEC 11.2) Via de zoekroute.
-
-    **GEMETEN in fase 0b:** de MA-server op schema 31 valideert de URI **niet** vóór
-    het afspelen — `verify_item_uri` bestaat pas vanaf schema 33, en op 31 wordt een
-    URI die `://` bevat direct geaccepteerd
-    (`components/music_assistant/media_player.py:494-498`). Een verouderde URI faalt
-    daardoor stil, en dat is waarom deze controle bestaat.
-
-    **Dit is geen identiteitscontrole, en dat hoort in de code te staan.** De meting
-    uit SPEC 8.2.1 liet twee albums met dezelfde naam van verschillende artiesten
-    zien: een naam identificeert een item niet uniek. Daarom wordt er vergeleken op de
-    **URI-string** en dient de naam alleen om de zoekopdracht te richten. Dat sluit een
-    vals positief niet uit — een provider die dezelfde URI hergebruikt komt erdoor —
-    maar het maakt het onwaarschijnlijk.
-
-    Het **vals negatief** is het ergste geval: is het item er nog maar geeft de
-    zoekopdracht het niet terug (andere sortering, wisselvallige provider zoals
-    RadioBrowser in fase 0b), dan zou de controle onterecht zeggen dat het geluid weg
-    is en van een werkende wekker een stille maken. Dat risico is de reden dat een
-    **mislukte** controle `ONBEKEND` teruggeeft en niet `FOUT`.
-
-    Geeft nooit een exceptie door: elke fout wordt `ONBEKEND`.
-    """
-    uri = geluid.get("uri")
-    if not uri:
-        # Geen URI is geen twijfel maar een vastgestelde fout: hier valt niets af te
-        # spelen. Validatie zou dit moeten tegenhouden; komt het er tóch door, dan is
-        # stil doorgaan het slechtste antwoord.
-        return Uitkomst.FOUT
-
-    entries = hass.config_entries.async_loaded_entries(MA_DOMAIN)
-    if not entries:
-        # Zonder MA valt er niets te controleren. Dat is ONBEKEND en niet FOUT — maar
-        # het maakt hier niets uit, want `controleer_speaker` heeft dit geval dan al
-        # afgekeurd. Deze regel bestaat voor de aanroeporde die ik niet heb voorzien.
-        _LOGGER.debug("Geen Music Assistant-entry; URI-controle overgeslagen")
-        return Uitkomst.ONBEKEND
-
-    data: dict[str, Any] = {
-        "config_entry_id": entries[0].entry_id,
-        "name": geluid.get("name") or "",
-        # Ruime limiet (SPEC 11.2): het maximum uit 15.6. Een krappe limiet vergroot
-        # juist het vals negatief.
-        "limit": SEARCH_LIMIT_MAX,
-    }
-    media_type = geluid.get("media_type")
-    if media_type:
-        data["media_type"] = [media_type]
-
-    try:
-        async with asyncio.timeout(SEARCH_TIMEOUT_SECONDEN):
-            antwoord = await hass.services.async_call(
-                MA_DOMAIN, "search", data, blocking=True, return_response=True
-            )
-    except TimeoutError:
-        _LOGGER.debug(
-            "URI-controle voor %s liep in de time-out van %s s; de wekker gaat wél af "
-            "(SPEC 11.2.1)",
-            uri,
-            SEARCH_TIMEOUT_SECONDEN,
-        )
-        return Uitkomst.ONBEKEND
-    # Alles wat hierna nog komt is ONBEKEND, en dat is met opzet zo breed: een
-    # `HomeAssistantError` van MA, een provider die iets onverwachts teruggeeft, een
-    # `KeyError` diep in de client — het zijn alle drie "de controle kon niet worden
-    # uitgevoerd", en geen van drieën zegt iets over het geluid (SPEC 11.2.1).
-    except Exception as fout:  # noqa: BLE001 - zie docstring
-        _LOGGER.debug(
-            "URI-controle voor %s kon niet worden uitgevoerd (%s); de wekker gaat wél "
-            "af (SPEC 11.2.1)",
-            uri,
-            fout,
-        )
-        return Uitkomst.ONBEKEND
-
-    if _uri_in_treffers(antwoord, uri):
-        return Uitkomst.GOED
-
-    # De zoekopdracht is gelukt en de URI staat er niet tussen: vastgesteld negatief.
-    _LOGGER.debug("URI %s komt niet voor in de zoekresultaten op %r", uri, data["name"])
-    return Uitkomst.FOUT
-
-
-def _uri_in_treffers(antwoord: Any, uri: str) -> bool:
-    """Komt `uri` letterlijk voor in het antwoord van `music_assistant.search`?
-
-    MA geeft acht emmers terug (SPEC 8.1); ze worden alle acht doorlopen omdat een
-    provider een item soms in een andere emmer plaatst dan het opgeslagen
-    `media_type` doet vermoeden — en een emmer overslaan zou een vals negatief
-    opleveren, precies wat SPEC 11.2 als het ergste geval aanmerkt.
-    """
-    if not isinstance(antwoord, dict):
-        return False
-    for treffers in antwoord.values():
-        if not isinstance(treffers, list):
-            continue
-        for item in treffers:
-            if isinstance(item, dict) and item.get("uri") == uri:
-                return True
-    return False

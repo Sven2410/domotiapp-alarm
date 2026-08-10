@@ -8,7 +8,7 @@ scheiding is van fase 3b en is in fase 3c niet aangeraakt: de planner is af.
 | # | Stap | Waarom hier |
 |---|---|---|
 | 0 | `last_fired` bijwerken | vóór álles wat geluid kan maken — zie hieronder |
-| 1 | noodrem vooraf | SPEC 11.1 en 11.2 |
+| 1 | noodrem vooraf | SPEC 11.1 — alleen `available`; de URI-controle is vervallen |
 | 2 | huidig volume **lezen** | SPEC 9.5: vóór stap 3, want daarna is het weg |
 | 3 | volume op **0** | vóór stap 5, anders is er één harde uitbarsting |
 | 4 | wake-up light aan | SPEC 12, als ingesteld |
@@ -126,24 +126,19 @@ async def async_laat_afgaan(
             alarm_id,
         )
 
-    # --- stap 1: noodrem vooraf (SPEC 11.1 en 11.2) ---------------------
+    # --- stap 1: noodrem vooraf (SPEC 11.1) -----------------------------
+    #
+    # Eén controle, en dat is sinds fase 3c-bis een keuze: hier stond ook een
+    # URI-controle (SPEC 11.2), en die sloeg vals alarm voor een hele provider. Zie de
+    # moduledocstring van `noodrem.py`. Het geluid wordt nu **niet** vooraf gecontroleerd;
+    # een dood geluid komt boven bij `play_media` (stap 5) of bij de tweede controle
+    # vijf seconden later (stap 7).
     uitkomst, soort = noodrem.controleer_speaker(hass, speaker)
     if uitkomst is Uitkomst.FOUT:
         _LOGGER.warning(
             "Wekker %s gaat NIET af: speaker %s is niet bereikbaar", alarm_id, speaker
         )
         await _async_faal(hass, registry_id, person_entity_id, wekker, soort)
-        return
-
-    if await noodrem.async_controleer_uri(hass, wekker.get("sound") or {}) is Uitkomst.FOUT:
-        _LOGGER.warning(
-            "Wekker %s gaat NIET af: het geluid %r bestaat niet meer",
-            alarm_id,
-            (wekker.get("sound") or {}).get("uri"),
-        )
-        await _async_faal(
-            hass, registry_id, person_entity_id, wekker, meldingen.KIND_SOUND_GONE
-        )
         return
 
     # De noodrem is gehaald. Nú de melding van een vorige keer opruimen — niet aan het
@@ -180,8 +175,25 @@ async def async_laat_afgaan(
     # --- stap 5: geluid starten ----------------------------------------
     if not await _async_start_geluid(hass, speaker, wekker.get("sound") or {}):
         _LOGGER.warning(
-            "Wekker %s gaat NIET af: het afspelen op %s is mislukt", alarm_id, speaker
+            "Wekker %s gaat NIET af: het afspelen van %r op %s is mislukt",
+            alarm_id,
+            (wekker.get("sound") or {}).get("uri"),
+            speaker,
         )
+        # `sound_gone` en niet `speaker_unavailable`: de speaker is een paar
+        # milliseconden eerder nog beschikbaar bevonden (stap 1), dus "de speaker was niet
+        # bereikbaar" zou onwaar zijn tegen de klant. Wat er dan overblijft is het geluid,
+        # en `sound_gone` geeft ook de handeling die helpt — "Kies een nieuw geluid".
+        #
+        # Deze soort werd tot fase 3c-bis door de URI-controle gestuurd. Nu die vervallen
+        # is, is dít de enige plek die hem stuurt, en dat is geen hergebruik uit
+        # verlegenheid: de aanroep die het geluid werkelijk zou starten heeft geweigerd,
+        # en dat is een sterker signaal dan een zoekopdracht ooit was.
+        #
+        # De tekst van SPEC 11.7 stelt het zekerder dan wij het weten ("bestaat niet
+        # meer" terwijl we alleen weten dat het niet startte). Dat is gemeld in
+        # docs/fase-3c/RAPPORT-BIS.md; SPEC is er niet voor gewijzigd.
+        #
         # De lamp is hierboven al aangegaan als hij was ingesteld — dat is precies wat
         # SPEC 11.6 punt 2 voorschrijft, en hij hoort niet weer uit.
         await _async_faal(
@@ -189,7 +201,7 @@ async def async_laat_afgaan(
             registry_id,
             person_entity_id,
             wekker,
-            meldingen.KIND_SPEAKER_UNAVAILABLE,
+            meldingen.KIND_SOUND_GONE,
             lamp_al_gedaan=True,
         )
         return

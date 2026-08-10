@@ -556,11 +556,19 @@ is dan onbruikbaar. Daarom:
 
 - naast de `uri` worden **`name`, `media_type` en `image`** opgeslagen, zodat de
   kaart kan blijven tonen wat de klant had gekozen ook als de URI niet meer
-  werkt;
-- de noodrem controleert de URI vóór het afspelen
-  ([sectie 11.2](#112-de-uri-wordt-vooraf-gecontroleerd));
-- faalt hij, dan is de melding **"Het gekozen geluid bestaat niet meer"** met de
-  opgeslagen naam erin, en niet een kale URI.
+  werkt. **Deze aanbeveling blijft onverkort staan**, ook nu de voorafgaande
+  URI-controle is vervallen ([11.2](#112-de-uri-wordt-niet-vooraf-gecontroleerd)): die drie velden bestaan om te **tonen** wat
+  de klant koos, niet om iets te controleren. Ze dragen de rij op de kaart, de
+  afbeelding, en de naam in elke melding;
+- faalt het afspelen, dan is de melding **"Het gekozen geluid bestaat niet meer"** met
+  de opgeslagen `name` erin en niet een kale URI — dus juist die opgeslagen naam maakt
+  het verschil tussen een leesbare melding en een regel machinetaal.
+
+**Wat er NIET meer gebeurt:** eerdere versies lieten de noodrem de URI vóór het
+afspelen controleren, met een zoekopdracht op de opgeslagen `name`. Die controle is in
+fase 3c-bis vervallen omdat de opgeslagen naam voor een hele provider onvindbaar bleek
+in MA's eigen zoekindex; zie [11.2](#112-de-uri-wordt-niet-vooraf-gecontroleerd). Een verouderde URI wordt daardoor **pas bij het
+afspelen** opgemerkt.
 
 ### 8.2.1 Welke soorten getoetst zijn
 
@@ -591,9 +599,15 @@ ongetoetst; er was geen provider die ze levert.
 
 **Wat dezelfde meting óók liet zien, en wat elders doorwerkt:** bij
 `"Ghost Stories"` kwamen **twee albums met dezelfde naam van verschillende
-artiesten** terug. Een naam identificeert een item dus **niet** uniek. Dat is de
-reden dat de URI-controle in
-[sectie 11.2](#112-de-uri-wordt-vooraf-gecontroleerd) niet op naam mag leunen.
+artiesten** terug. Een naam identificeert een item dus **niet** uniek.
+
+Dat was oorspronkelijk het argument om de URI-controle niet op naam te laten leunen.
+Fase 3c toonde dat het probleem een graad erger is: de opgeslagen naam is voor sommige
+providers niet alleen niet-uniek maar **helemaal niet vindbaar**, en daarom is die
+controle vervallen ([11.2](#112-de-uri-wordt-niet-vooraf-gecontroleerd)). De meting blijft hier staan omdat ze óók voor de
+**editor** geldt: twee gelijknamige treffers betekent dat de klant iets moet kunnen
+onderscheiden aan meer dan de naam, en dat is waarom `image` en `media_type` in de
+zoekresultaten staan ([15.6](#156-domotiapp_alarmsoundsearch)).
 
 ### 8.3 Afspelen
 
@@ -656,14 +670,14 @@ zodat MA zijn eigen standaard houdt.
   `opensubsonic` en enkele andere — kortom de streamingproviders en de
   mediaservers. Geen van de gratis radio- en podcastproviders heeft hem.
 
-**Hoe de integratie erbij komt.** Net als bij de URI-controle
-([11.2](#112-de-uri-wordt-vooraf-gecontroleerd)) is er **geen HA-service** die de
-providerlijst van Music Assistant blootgeeft. Er zijn twee routes, en de tweede is
+**Hoe de integratie erbij komt.** Er is **geen HA-service** die de providerlijst van
+Music Assistant blootgeeft — hetzelfde probleem dat de URI-controle van
+[11.2](#112-de-uri-wordt-niet-vooraf-gecontroleerd) uiteindelijk fataal werd. Er zijn twee routes, en de tweede is
 de vastgelegde:
 
 | Route | Voordeel | Prijs |
 |---|---|---|
-| `entry.runtime_data.mass` van de MA-config-entry uitvragen | actueel en exact | de binnenkant van een andere integratie — **afgewezen**, zie [11.2](#112-de-uri-wordt-vooraf-gecontroleerd) |
+| `entry.runtime_data.mass` van de MA-config-entry uitvragen | actueel en exact | de binnenkant van een andere integratie — **afgewezen**, zie [11.2.2](#1122-voorkeursoptie-zodra-ma-hem-publiceert) |
 | **Een lijst providerdomeinen in onze eigen constanten**, afgeleid uit MA's broncode | alleen de opgeslagen `uri` nodig, geen afhankelijkheid van andermans binnenkant | de lijst kan verouderen als MA de feature aan een provider toevoegt of ontneemt |
 
 **De vastgelegde route is de tweede:** een constante met de providerdomeinen die
@@ -693,9 +707,10 @@ vaststellen of de provider de feature heeft — geen providerlijst beschikbaar, 
 onbekend URI-schema, een fout of een time-out — dan wordt `radio_mode`
 **weggelaten**.
 
-Dat is bewust de omgekeerde keuze van
-[11.2.1](#1121-een-mislukte-controle-laat-de-wekker-doorgaan), waar een mislukte
-controle de wekker juist laat doorgaan. Het verschil zit in wat de twijfel kost:
+Dat was bewust de omgekeerde keuze van de vervallen URI-controle, waar een mislukte
+controle de wekker juist liet doorgaan ([11.2.1](#1121-vervallen--de-omkering-bestond-alleen-voor-de-controle)).
+Sinds die controle weg is, is dit de **enige** plek in het product waar twijfel tot
+weglaten leidt. Het verschil zit in wat de twijfel kost:
 
 | | Bij twijfel meesturen | Bij twijfel weglaten |
 |---|---|---|
@@ -873,101 +888,153 @@ nog één `WARNING` in het log; bij targeting op een **label** komt er
 label-targeting met één offline speaker gaf nul waarschuwingen. Een wekker die op
 die manier faalt, faalt volkomen stil.
 
-### 11.2 De URI wordt vooraf gecontroleerd
+### 11.2 De URI wordt NIET vooraf gecontroleerd
 
-**GEMETEN** in fase 0b: de MA-server op **schema 31** valideert de URI **niet**
-vóór het afspelen — `verify_item_uri` bestaat pas vanaf schema 33, en op 31 wordt
-een URI die `://` bevat direct geaccepteerd
-(`components/music_assistant/media_player.py:494-498`). Een verouderde URI faalt
-daardoor stil.
+**Vastgelegd in fase 3c-bis, en dit is een ontwerpcorrectie.** Eerdere versies van deze
+sectie schreven een controle vóór het afspelen voor: een zoekopdracht op de opgeslagen
+`name`, met de vergelijking op de `uri`. **Die controle vervalt.** Er is geen
+voorafgaande controle op het geluid meer.
 
-De integratie controleert dus zelf dat het opgeslagen geluid nog bestaat.
+#### Waarom hij vervalt
 
-**De vastgelegde route is `music_assistant.search`.** Een zoekopdracht op de
-opgeslagen `name`, beperkt tot het opgeslagen `media_type`, waarbij gekeken wordt of
-de opgeslagen `uri` **letterlijk** in de treffers voorkomt. Ruime `limit`: **50**,
-het maximum uit [15.6](#156-domotiapp_alarmsoundsearch).
+De controle sloeg vals alarm, en niet bij uitzondering maar als normale uitkomst voor
+een hele provider. **GEMETEN in fase 3c, taak I** (`docs/fase-3c/RAPPORT.md`, sectie
+"BEVINDING"; herhaald in `RAPPORT-BIS.md`): de eerste wekker die op de dev-instance werd
+gezet, op een SomaFM-kanaal, ging niet af:
 
-**Waarom deze en niet de directe controle die er wél is.** Fase 3a heeft een
-directe controle gevonden en gemeten (`docs/fase-3a/RAPPORT.md`, taak A2) — zie
-[11.2.2](#1122-voorkeursoptie-zodra-ma-hem-publiceert) — maar die is alleen te
-bereiken via `entry.runtime_data.mass`, de **binnenkant** van de
-`music_assistant`-integratie. Dat is precies het soort afhankelijkheid dat bij een
-update van die integratie **stilletjes** breekt, en dit product mag niet stil
-breken. Diezelfde afweging staat in DomotiApp Scene bij de groep-constanten, met de
-aantekening dat een wijziging bovenstrooms daar stil zou doorwerken.
+```
+23:23:00.245 WARNING [afvuren] Wekker 4a852fe9… gaat NIET af:
+             het geluid 'somafm://radio/beatblender' bestaat niet meer
+```
 
-De zoekroute gebruikt uitsluitend de **gepubliceerde** service. Dat is de prijs
-waard, en de prijs staat hieronder.
+Het geluid bestond wél. Twee minuten eerder was het via
+[15.6](#156-domotiapp_alarmsoundsearch) gevonden en opgeslagen. De meting:
 
-> **De zoekroute is geen identiteitscontrole, en dat moet in de code staan.**
-> De meting uit [8.2.1](#821-welke-soorten-getoetst-zijn) laat zien waarom: op
-> `"Ghost Stories"` kwamen **twee albums met dezelfde naam van verschillende
-> artiesten** terug. **Een naam identificeert een item niet uniek.**
->
-> Concrete gevolgen, die als bekende beperking gelden
-> ([20.1](#201-bekende-beperkingen)):
->
-> - **Vals positief:** staat er een gelijknamig item in de bibliotheek waarvan de
->   URI wél bestaat, dan zou een controle die op **naam** vergelijkt "geldig"
->   zeggen over een URI die dood is. Daarom is de vergelijking **op de
->   URI-string**; de naam dient alleen om de zoekopdracht te richten. Dat sluit
->   het vals positief niet volledig uit — een provider die dezelfde URI opnieuw
->   uitgeeft voor een ander item zou erdoor komen — maar het maakt het onwaarschijnlijk.
-> - **Vals negatief:** is het item er nog maar geeft de zoekopdracht het niet
->   terug — een andere sorteervolgorde, een `limit` die niet toereikend is, een
->   wisselvallige provider zoals RadioBrowser in fase 0b — dan meldt de controle
->   onterecht dat het geluid weg is. **Dat is het ergste faalgeval**, want het
->   maakt van een werkende wekker een stille. Het is de reden dat
->   [11.2.1](#1121-een-mislukte-controle-laat-de-wekker-doorgaan) bestaat.
+| Zoekopdracht | Treffers | Bevat `somafm://radio/beatblender` |
+|---|---|---|
+| `"SomaFM: Beat Blender"` ← **de opgeslagen `name`** | **0** | **nee** |
+| `"Beat Blender"` | 3 | ja |
+| `"beatblender"` | 0 | nee |
 
-#### 11.2.1 Een mislukte controle laat de wekker doorgaan
+**De naam die Music Assistant teruggeeft is een naam die Music Assistant zelf niet kan
+vinden.** De weergavenaam draagt een providerprefix (`SomaFM: `) die niet in de
+zoekindex zit. De voorgeschreven route was daarmee **zelf-verslaand**: hij kon per
+definitie zijn eigen opgeslagen geluid niet terugvinden, omdat
+[8.2](#82-sla-de-uri-op-niet-de-naam) voorschrijft dat de opgeslagen naam de naam is
+die MA teruggaf.
 
-**Vastgelegd, en dit is een bewuste omkering van de noodremlogica.**
+Het is providerspecifiek, en dat maakt het erger in plaats van beter. Elke treffer
+opnieuw op zijn eigen naam gezocht:
 
-Overal elders in [sectie 11](#11-de-noodrem) geldt: kun je niet vaststellen dat
-het goed gaat, ga dan niet af en meld het. **Hier geldt het omgekeerde.** Kan de
-URI-controle **niet worden uitgevoerd** — de zoekopdracht loopt in de time-out van
-10 seconden, Music Assistant geeft een fout, de provider is wisselvallig zoals
-RadioBrowser in fase 0b — dan wordt de wekker **wél** gestart.
+| Provider | Voorbeeldnaam | Zelf-vindbaar |
+|---|---|---|
+| `somafm://` | `SomaFM: Beat Blender` | **nee** |
+| `radiobrowser://` | `SomaFM Beat Blender (128k AAC)` | ja |
+| iTunes-podcasts | `Radiolab` | ja |
 
-De reden: **een trage zoekopdracht is geen reden om iemand niet te wekken.** Het
-verschil met de andere controles is dat die iets vaststellen over de speaker en
-dus over de kans op geluid; deze stelt iets vast over een hulpaanroep die zelf kan
-falen zonder dat er met het geluid iets aan de hand is. Een controle die de wekker
-tegenhoudt omdat de controle zelf stuk is, is erger dan geen controle.
+Juist de provider die zonder account betrouwbaar werkt is de provider die faalt. De
+zelf-vindbare radioprovider is RadioBrowser, en die is **wisselvallig** (fase 0b: 1 van
+6 zoekopdrachten lukte).
 
-Het slechtste geval wordt bovendien **achteraf opgevangen**: is de URI werkelijk
-dood, dan levert het afspelen niets op en vangt de controle van
-[11.3](#113-een-paar-seconden-ná-het-starten) dat een paar seconden later alsnog,
-met de melding die daarbij hoort. De klant wordt dan wel niet gewekt, maar hij
-weet 's ochtends waarom — en dat is dezelfde uitkomst als wanneer de controle
-vooraf had geweigerd.
+De vorige versie van deze sectie noemde het valse negatief al **"het ergste
+faalgeval"**, want het maakt van een werkende wekker een stille. Het stond er als
+risico. Het bleek de normale uitkomst.
 
-Onderscheid dus scherp, want de twee zien er in code op elkaar lijken:
+#### Wat het faalgeval nu is, en waarom dat beter is
 
-| Uitkomst van de controle | Wat er gebeurt |
-|---|---|
-| **De URI bestaat niet** (controle gelukt, antwoord negatief) | Wekker gaat **niet** af, melding `sound_gone` |
-| **De controle kon niet worden uitgevoerd** (time-out of fout) | Wekker gaat **wél** af; `DEBUG`-regel dat de controle is overgeslagen |
+**Een controle die vals alarm slaat is erger dan geen controle.** Het faalgeval
+verschuift:
 
-**Dit geldt onverkort voor elke route**, ook voor de directe controle uit
-[11.2.2](#1122-voorkeursoptie-zodra-ma-hem-publiceert) als die ooit gebruikt wordt:
-ook `music/item_by_uri` kan onbereikbaar zijn, en `ProviderUnavailableError` is
-precies zo'n geval — de controle kon niet worden uitgevoerd, dus de wekker gaat af.
+| | met de controle | zonder de controle |
+|---|---|---|
+| URI is dood | wekker gaat **niet** af, melding `sound_gone` | wekker gaat af, geen geluid, melding via [11.3](#113-een-paar-seconden-ná-het-starten) |
+| URI leeft, naam niet vindbaar | **wekker gaat niet af** — vals alarm | wekker gaat af en klinkt |
+| URI leeft, naam vindbaar | wekker gaat af en klinkt | wekker gaat af en klinkt |
 
-**Let op het verschil met `radio_mode`** ([8.3.1](#831-radio_mode-wordt-voorwaardelijk-meegestuurd)),
-waar een mislukte controle de tegenovergestelde uitkomst heeft. Dat is geen
-inconsistentie maar dezelfde afweging op andere feiten: hier kost twijfel een wekker
-die misschien niets speelt, daar kost twijfel een wekker die **zeker** niets speelt
-(HTTP 500). In beide gevallen wint de keuze waarbij er nooit stilte is die te
-vermijden was.
+De middelste rij is de reden. De bovenste rij is de prijs, en die is aanvaardbaar: van
+*"de wekker ging niet af"* naar *"de wekker ging af maar was stil"*, en dat tweede wordt
+**wel** opgemerkt — door de controle van [11.3](#113-een-paar-seconden-ná-het-starten),
+met de melding `speaker_lost_during_play` erbij. De klant weet 's ochtends nog steeds
+waarom hij zich heeft verslapen.
+
+#### Dit is geen versoepeling van de noodrem
+
+**De noodrem blijft in beide richtingen onaangeroerd:**
+
+- **[11.1](#111-vóór-het-afspelen-available) blijft** — de speaker moet beschikbaar
+  zijn vóór het afspelen. Die controle stelt iets vast over de **kans op geluid** en
+  faalt niet vals: `available` is `False` of hij is dat niet.
+- **[11.3](#113-een-paar-seconden-ná-het-starten) blijft** — vijf seconden na het
+  starten wordt opnieuw gecontroleerd. Deze controle wordt door het vervallen van 11.2
+  **belangrijker**, want hij is nu het enige net onder een dood geluid.
+- **[11.4](#114-playback_state-is-nooit-bewijs) blijft** — `playback_state` is nooit
+  bewijs.
+- **[11.6](#116-bij-falen) blijft** — faalt een controle, dan gaat de wekker niet af, er
+  komt geen verzonnen alternatief, en er komt een melding.
+
+Wat wegvalt is precies één ding: een **hulpaanroep** die iets probeerde vast te stellen
+over een derde partij, en die daarbij aantoonbaar vaker ongelijk had dan gelijk. Het
+verschil met 11.1 is dat 11.1 een eigenschap van de speaker leest en 11.2 een
+zoekindex ondervroeg die de vraag niet kon beantwoorden.
+
+#### Wat er met een dood geluid gebeurt
+
+`music_assistant.play_media` wordt blokkerend aangeroepen
+([8.3](#83-afspelen)). Faalt die aanroep, dan gaat de wekker **niet** af en volgt de
+melding uit [11.6](#116-bij-falen) — dus een dood geluid dat MA met een fout afwijst
+wordt nog steeds opgemerkt, alleen nu op het moment van afspelen in plaats van ervoor.
+Levert de aanroep géén fout op terwijl er niets speelt, dan is
+[11.3](#113-een-paar-seconden-ná-het-starten) het net.
+
+**GEMETEN in fase 0b, en dit is waarom 11.3 nu draagt wat 11.2 droeg:** MA op schema 31
+valideert de URI zelf **niet** vóór het afspelen — `verify_item_uri` bestaat pas vanaf
+schema 33, en op 31 wordt een URI die `://` bevat direct geaccepteerd
+(`components/music_assistant/media_player.py:494-498`). Er is dus geen garantie dat een
+dood geluid een fout oplevert. Zie [20.1](#201-bekende-beperkingen), punt 8.
+
+#### 11.2.1 VERVALLEN — de omkering bestond alleen voor de controle
+
+Deze subsectie schreef voor dat een **mislukte** URI-controle de wekker juist wél liet
+doorgaan: een trage zoekopdracht is geen reden om iemand niet te wekken. Dat was de
+enige plek in [sectie 11](#11-de-noodrem) waar twijfel de andere kant op viel, en de
+tekst waarschuwde uitdrukkelijk dat de twee gevallen — *"de URI bestaat niet"* tegen
+*"de controle kon niet worden uitgevoerd"* — in code op elkaar lijken.
+
+**Met het vervallen van de controle in [11.2](#112-de-uri-wordt-niet-vooraf-gecontroleerd)
+vervalt de omkering.** Er is geen controle die kan mislukken, dus er is geen
+onderscheid meer te maken en geen uitzondering meer nodig. De code hoeft dat verschil
+niet langer te dragen — en dat is winst, want het was het subtielste onderscheid in het
+hele product.
+
+**Wat er van de gedachte overblijft**, en dat is de reden dat deze subsectie niet
+zomaar geschrapt is maar hier staat: de afweging zelf blijft geldig en komt op één plek
+terug. Bij [8.3.1](#831-radio_mode-wordt-voorwaardelijk-meegestuurd) valt twijfel de
+**andere** kant op dan hier: `radio_mode` wordt bij twijfel **weggelaten**, want daar
+kost twijfel een wekker die *zeker* niets speelt (HTTP 500, lege queue) in plaats van
+een wekker die *misschien* niets speelt. Wie die sectie leest en zich afvraagt waarom de
+keuze daar omgekeerd is dan hij hier ooit was: dit is het antwoord, en het is dezelfde
+afweging op andere feiten.
 
 #### 11.2.2 Voorkeursoptie zodra MA hem publiceert
 
 **Zodra Music Assistant een URI-controle via een gepubliceerde service beschikbaar
-stelt, gaat die vóór op de zoekroute.** Dit is geen "misschien ooit": de controle
-bestaat al aan de MA-kant en is in fase 3a gemeten. Alleen de service ontbreekt.
+stelt, komt een voorafgaande controle terug — en dan is dat de enige route.** Dit is
+geen "misschien ooit": de controle bestaat al aan de MA-kant en is in fase 3a gemeten.
+Alleen de service ontbreekt.
+
+**Het overstapcriterium is veranderd, en dat is de kern van deze subsectie.** Tot fase
+3c-bis luidde het: *de directe controle is beter dan de zoekroute, dus stap over zodra
+hij te bereiken is.* Er was toen een werkende tweede keus. Nu niet meer:
+
+| | vóór 3c-bis | vanaf 3c-bis |
+|---|---|---|
+| zoekroute | de vastgelegde route | **vervallen**, aantoonbaar zelf-verslaand |
+| `music/item_by_uri` | betere alternatief | **de enige mogelijke route** |
+| als geen van beide kan | — | **geen voorafgaande controle**, dat is de huidige toestand |
+
+Er is dus geen terugvaloptie meer. Een voorafgaande controle op het geluid komt terug
+óf niet, en tot die tijd draagt [11.3](#113-een-paar-seconden-ná-het-starten) het geval
+alleen.
 
 Wat er is, met vindplaats:
 
@@ -976,27 +1043,35 @@ Wat er is, met vindplaats:
 | `music/verify_item_uri` | `music_assistant_client/music.py:721-739` | **≥ 33** | `bool`; op schema 31 `HTTP 400 Invalid Command` |
 | `music/item_by_uri` | `music_assistant_client/music.py:714-719` | geen eis | het media-item, of een exceptie |
 
-`music/item_by_uri` geeft **drie** uitkomsten, en dat is er één meer dan deze
-sectie nodig heeft — precies het onderscheid dat
-[11.2.1](#1121-een-mislukte-controle-laat-de-wekker-doorgaan) beschrijft, plus een
-derde die het her-gekoppelde-provider-geval uit [8.2](#82-sla-de-uri-op-niet-de-naam)
-dekt:
+`music/item_by_uri` geeft **drie** uitkomsten, en die drie zijn precies wat een
+bruikbare controle nodig heeft — inclusief het her-gekoppelde-provider-geval uit
+[8.2](#82-sla-de-uri-op-niet-de-naam):
 
 | Uitkomst | Betekenis | Gedrag |
 |---|---|---|
 | het item komt terug | de URI bestaat | wekker gaat af |
 | `MediaNotFoundError` | de URI bestaat **niet** | wekker gaat **niet** af, melding `sound_gone` |
-| `ProviderUnavailableError` | de **provider** is er niet | controle kon niet worden uitgevoerd → wekker gaat **wél** af |
+| `ProviderUnavailableError` | de **provider** is er niet | dat de provider weg is bewijst niet dat het nummer weg is → wekker gaat **wél** af |
 
-Die derde is het geval waarin de provider opnieuw gekoppeld is en een ander
-instantie-ID heeft (`spotify--ZvzrFmgX`). **Dat de provider weg is, bewijst niet
-dat het nummer weg is** — en dat is met de zoekroute niet te onderscheiden.
+**Waarom dit het probleem van 11.2 niet heeft:** deze route vraagt naar de URI en niet
+naar de naam. Er is geen zoekindex bij betrokken, dus er is geen providerprefix die niet
+gevonden wordt. Het faalgeval dat de zoekroute onbruikbaar maakte, kan hier per
+constructie niet optreden.
 
-**Het criterium om over te stappen:** Music Assistant stelt de controle beschikbaar
-als **service** in `components/music_assistant/services.yaml`, naast de zes die er
-nu zijn (`play_media`, `play_announcement`, `transfer_queue`, `get_queue`, `search`,
-`get_library`). Vanaf dat moment is de zoekroute overbodig en verdwijnt hij, met de
-bekende beperking erbij. Iemand moet dit blijven volgen; het is dezelfde soort
+**Waarom hij nog niet gebruikt wordt:** hij is alleen te bereiken via
+`entry.runtime_data.mass`, de **binnenkant** van de `music_assistant`-integratie. Dat is
+precies het soort afhankelijkheid dat bij een update van die integratie stilletjes
+breekt, en dit product mag niet stil breken. Die afweging staat nog steeds — maar de
+weegschaal is wel gekanteld: het alternatief is nu *geen* controle in plaats van *een
+andere* controle. Als de eigenaar de directe route alsnog wil, is dat een verdedigbare
+keuze en geen ongelukje; het vraagt dan wel een expliciete afspraak over wat er gebeurt
+als `runtime_data.mass` er niet is (behandelen als `ProviderUnavailableError`: wekker
+gaat af).
+
+**Het criterium om over te stappen** blijft: Music Assistant stelt de controle
+beschikbaar als **service** in `components/music_assistant/services.yaml`, naast de zes
+die er nu zijn (`play_media`, `play_announcement`, `transfer_queue`, `get_queue`,
+`search`, `get_library`). Iemand moet dit blijven volgen; het is dezelfde soort
 openstaande post als de tweede laadroute uit [sectie 2](#2-architectuur-in-één-beeld).
 
 ### 11.3 Een paar seconden ná het starten
@@ -1007,6 +1082,12 @@ er tóch geen geluid is.
 
 **VOORSTEL: 5 seconden ná stap 5** van [9.1](#91-de-volgorde). Lang genoeg dat
 MA de stream heeft opgezet, kort genoeg dat de klant nog niet is doorgeslapen.
+
+**Sinds fase 3c-bis draagt deze controle meer dan hij deed.** Met het vervallen van de
+voorafgaande URI-controle ([11.2](%s)) is dit het **enige** net onder een geluid dat niet
+meer bestaat: levert `play_media` geen fout op terwijl er niets speelt, dan is dit de
+plek waar dat boven komt. Wie deze controle ooit wil weghalen of verlengen, haalt daarmee
+dus meer weg dan alleen een tweede blik op de speaker.
 
 ### 11.4 `playback_state` is nooit bewijs
 
@@ -1661,11 +1742,12 @@ over `radio_mode` vindt, verandert niets aan deze volgorde. Wordt een los nummer
 een even bruikbare wekker, dan blijft het nog steeds zo dat iemand die een wekker
 instelt meestal een afspeellijst of een radiostation wil.
 
-**Het maximum van 50 ligt vast en is niet cosmetisch:** de URI-controle uit
-[11.2](#112-de-uri-wordt-vooraf-gecontroleerd) gebruikt die bovengrens om het valse
-negatief te beperken. Verlaag je hem, dan wordt een geldige URI eerder onterecht als
-verdwenen gemeld — en dan gaat een werkende wekker niet af. De standaard van 10 is
-wél een voorstel: die geldt alleen voor de editor, waar de gebruiker meekijkt.
+**Het maximum van 50 ligt vast.** De oorspronkelijke reden was de URI-controle, die
+deze bovengrens gebruikte om het valse negatief te beperken; die controle is in fase
+3c-bis vervallen ([11.2](#112-de-uri-wordt-niet-vooraf-gecontroleerd)). Het maximum blijft staan, nu met alleen nog de reden
+waarvoor deze sectie bestaat: een klant die een aflevering of een station zoekt moet het
+kunnen vinden zonder zijn zoekterm te hoeven verfijnen. De standaard van 10 is wél een
+voorstel: die geldt alleen voor het eerste beeld in de editor.
 
 **Time-out: 10 seconden.** Vastgelegd. Duurt de zoekopdracht langer, dan breekt de
 integratie af en geeft `home_assistant_error`, en de editor toont letterlijk:
@@ -2131,24 +2213,75 @@ Elk punt met één regel waarom.
    geteste players `"none"` ([7.2](#72-vaststellen-dát-het-een-ma-speaker-is)).
 7. **De opgeslagen URI kan verouderen** als de provider opnieuw gekoppeld wordt
    ([8.2](#82-sla-de-uri-op-niet-de-naam)).
-8. **De URI-controle leunt op een zoekopdracht en is geen identiteitscontrole.**
-   Een naam identificeert een item niet uniek — gemeten: twee albums
-   `"Ghost Stories"` van verschillende artiesten. De vergelijking gebeurt daarom op
-   de URI-string, maar een vals negatief blijft mogelijk en maakt van een werkende
-   wekker een stille ([11.2](#112-de-uri-wordt-vooraf-gecontroleerd)). De directe
-   controle die dit zou oplossen bestaat aan de MA-kant, maar is niet via een
-   gepubliceerde service bereikbaar
-   ([11.2.2](#1122-voorkeursoptie-zodra-ma-hem-publiceert)).
-9. **`radio_mode` kan alleen met een streamingprovider.** Zonder een provider met
+8. **Een geluid dat niet meer bestaat wordt pas ACHTERAF opgemerkt.** Er is geen
+   voorafgaande controle op de URI meer; die is in fase 3c-bis vervallen omdat ze vals
+   alarm sloeg voor een hele provider ([11.2](#112-de-uri-wordt-niet-vooraf-gecontroleerd)). Gevolg: een verouderde URI leidt tot
+   een wekker die **wel afgaat maar stil blijft**. Dat wordt opgemerkt door de controle
+   vijf seconden ná het starten ([11.3](#113-een-paar-seconden-ná-het-starten)), en de
+   melding zegt dan dat de wekker **"mogelijk niet hoorbaar is geweest"** — niet dat het
+   geluid weg is, want dat is op dat moment niet vast te stellen. De klant weet dus wél
+   dat er iets mis was, maar niet meteen wát; hij moet zelf een nieuw geluid kiezen om
+   het uit te sluiten. De directe controle die dit zou oplossen bestaat aan de MA-kant
+   maar is niet via een gepubliceerde service bereikbaar
+   ([11.2.2](#1122-voorkeursoptie-zodra-ma-hem-publiceert)); komt die service er, dan
+   verdwijnt deze beperking.
+
+   **En als MA de URI wél met een fout afwijst**, gaat de wekker niet af en volgt de
+   gewone foutmelding — dat geval is dus niet stil. Er is alleen geen garantie dat het
+   zo gaat: MA op schema 31 accepteert elke URI met `://` zonder validatie (gemeten in
+   fase 0b).
+9. **De volume-oploop begint pas nadat het afspelen bevestigd is, en dat kost tijd.**
+   `music_assistant.play_media` wordt **blokkerend** aangeroepen, want anders is er geen
+   fout om op te vangen — de terugval zonder `radio_mode`
+   ([8.3.1](#831-radio_mode-wordt-voorwaardelijk-meegestuurd)) en de foutmelding uit
+   [11.6](#116-bij-falen) hangen er beide aan.
+
+   **Dat blokkerend nodig is, is niet te omzeilen.** `core.py:2953-2959`: met
+   `blocking=False` verpakt Home Assistant de aanroep in
+   `_run_service_call_catch_exceptions` als achtergrondtaak en geeft `None` terug — de
+   exceptie wordt **binnen HA afgevangen** en bereikt de integratie nooit. Niet
+   blokkerend aanroepen betekent dus: geen terugval op `radio_mode` en geen foutmelding
+   bij een mislukt afspelen. Nagelopen in fase 3c-bis, taak C.
+
+   **GEMETEN, twee keer, op twee providers:**
+
+   | Provider | wektijd → volume 0 | `play_media` blokkeert | totale afwijking |
+   |---|---|---|---|
+   | `radiobrowser://` (fase 3c, taak I) | 17 ms | **2131 ms** | **+2153 ms** |
+   | `somafm://` (fase 3c-bis, taak E) | 10 ms | **2550 ms** | **+2565 ms** |
+
+   Tussen 2,1 en 2,6 seconden, en het verschil zit niet in de provider maar in MA die de
+   stream opzet. Er is dus geen provider te kiezen die dit wegneemt. (Het verschil van
+   17 naar 10 ms in de eerste kolom is het vervallen van de URI-controle uit
+   [11.2](#112-de-uri-wordt-niet-vooraf-gecontroleerd): die kostte 5 ms.)
+
+   De oploop begon daardoor op +3,1 s respectievelijk +3,6 s, en bereikte het ingestelde
+   niveau op **+22,3 s** en **+22,7 s** in plaats van +20 s.
+
+   **Dit is onschadelijk zolang het volume op 0 staat** — en dat doet het, want dat is
+   stap 2 van [9.1](#91-de-volgorde) — dus die aanloop is stil in plaats van hard. Maar
+   het betekent dat *"van stil naar het ingestelde niveau in 20 seconden"*
+   ([9.3](#93-de-volume-oploop)) in de praktijk **20 seconden ná het starten van het
+   geluid** is en niet 20 seconden na de wektijd. Bij een trager antwoord van de
+   provider loopt de hele oploop mee naar achteren. Er is geen bovengrens gemeten en dus
+   ook geen bovengrens vastgelegd.
+
+   **Twee uitwegen zijn nagelopen in fase 3c-bis en beide afgewezen**, zie
+   `docs/fase-3c/RAPPORT-BIS.md`: niet-blokkerend aanroepen kost de foutdetectie (zie
+   hierboven), en de oploop laten starten vóórdat het afspelen bevestigd is verandert de
+   stappenorde van [9.1](#91-de-volgorde) én de betekenis van het `started`-event. Dat
+   tweede is een reële optie, maar het is een ontwerpwijziging en geen reparatie.
+
+10. **`radio_mode` kan alleen met een streamingprovider.** Zonder een provider met
    `SIMILAR_TRACKS` stopt een los nummer na een paar minuten; het veld wordt dan
    weggelaten en de editor waarschuwt
    ([8.3.1](#831-radio_mode-wordt-voorwaardelijk-meegestuurd)).
-10. **`audiobook` is niet getoetst.** Zes van de zeven mediasoorten zijn gemeten
+11. **`audiobook` is niet getoetst.** Zes van de zeven mediasoorten zijn gemeten
     ([8.2.1](#821-welke-soorten-getoetst-zijn)); voor luisterboeken was er geen
     provider. Werkt het niet, dan is dat één regel in de soortenlijst.
-11. **Er is één melding per wekker.** Een nieuwe overschrijft de vorige, dus een
+12. **Er is één melding per wekker.** Een nieuwe overschrijft de vorige, dus een
     wekker die gisteren mislukte en vandaag werd overgeslagen toont alleen het
     overslaan ([14.2.1](#1421-één-veld-voor-fouten-én-mededelingen)).
-12. **De afgaan-toestand is niet beschikbaar voor automatiseringen.** Het is een
+13. **De afgaan-toestand is niet beschikbaar voor automatiseringen.** Het is een
     abonnement en geen entiteit
     ([15.9](#159-domotiapp_alarmringingsubscribe)).
