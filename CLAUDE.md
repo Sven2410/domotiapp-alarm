@@ -79,6 +79,41 @@ het hier ook geldt, plus wat fase 0 zelf heeft gemeten.
 - **`custom_components/domotiapp_alarm/` moet in git bestaan vóór de container
   start**, anders maakt Docker er zelf een lege root-owned map van.
 
+### Music Assistant-testserver (fase 0b)
+
+- `docker-compose.music-assistant.yml`, project **`domotiapp-alarm-ma`**,
+  container **`ma-alarm`**, poorten **8095** (web-UI/API) en **8097**
+  (audiostream). Config in `.ma-dev-config/` (gitignored).
+- **HA bereikt MA op `http://host.docker.internal:8095`.** Binnen de
+  HA-container wijst `localhost` naar HA zelf. De **browser** moet juist
+  `localhost:8095` gebruiken, want die kent `host.docker.internal` niet.
+- **MA vereist authenticatie** (schema 31, min 28). Er is geen optie om dat uit
+  te zetten — gezocht op `DISABLE_AUTH|no_auth|allow_anonymous`, nul treffers.
+  De eerste admin maakt de **eigenaar** aan via `http://localhost:8095/setup`;
+  Claude Code maakt geen accounts en typt geen wachtwoorden.
+- **MA's API is JSON-RPC over `POST /api`**, met `{"command": ..., "args": {...}}`
+  en een bearer-token. Vanuit de browser: token uit `localStorage.ma_access_token`,
+  fetch binnen de pagina, alleen het resultaat teruggeven.
+- **Speakers zonder hardware:** de MA-image bevat `snapserver` **en**
+  `snapclient`. MA start zijn eigen snapserver (controlepoort 1705). Een
+  headless speaker met echte volumeregeling start je met:
+  ```
+  docker exec -d ma-alarm sh -c 'snapclient tcp://127.0.0.1:1704 \
+    --hostID wekker-slaapkamer --instance 1 \
+    --player file:filename=/dev/null --mixer software \
+    --logsink file:/tmp/snap1.log'
+  ```
+  Er loopt dan een echte stream: het log toont `Codec: flac, sampleformat:
+  48000:16:2`.
+- **Muziekbron zonder account:** **SomaFM** werkt (zoeken op kanaalnaam,
+  browsen via `somafm://`) en **iTunes Podcast Search** werkt.
+  **RadioBrowser is wisselvallig** (1 van 6 zoekopdrachten lukte; netwerk, DNS-SRV
+  en de `radios`-bibliotheek zijn uitgesloten). **Spotify werkt niet** achter
+  Docker Desktop: de OAuth-callback komt niet terug.
+- **Album, artiest en los nummer zijn op deze instance niet te toetsen** — die
+  komen bij een klant uit een streamingprovider. De toetslijst daarvoor staat in
+  `docs/fase-0b/RAPPORT.md` onder "Wat de eigenaar moet toetsen".
+
 ---
 
 ## Valkuilen
@@ -245,13 +280,64 @@ Alle regel- en bestandsverwijzingen hieronder zijn na te lezen in
     zegt: gebruik `TargetSelection`. Fase 0 heeft de meting nog met de oude
     klasse gedaan; gebruik in productiecode meteen `TargetSelection`.
 
+27. **`playback_state` van een MA-speaker bewijst niets.** Gemeten: nadat het
+    afspeelproces van een spelende speaker was gedood, meldde MA nog steeds
+    `playback_state: "playing"` met een **doorlopende** `elapsed_time` (220,3 s),
+    terwijl `available` op `false` stond. De queue weet niet of er iemand
+    luistert. **Gebruik `available` als noodrem, nooit `playing`.**
+
+28. **Een offline speaker faalt aan de MA-kant luid, maar niet overal.**
+    `player_queues/play_media` geeft HTTP 500 met
+    `PlayerUnavailableError`; `players/cmd/volume_set` geeft **HTTP 200** en
+    logt alleen `Ignoring command cmd_volume_set for unavailable player`. Dus:
+    afspelen klaagt, volume zetten slaagt stil. En omdat HA onbeschikbare
+    entiteiten al wegfiltert vóór de integratie (valkuil 19), komt die
+    500 nooit boven water.
+
+29. **Groepsvolume in MA werkt relatief, niet absoluut.** Een sync-groep meldt
+    zelf `volume_level: null` — de waarde zit in `group_volume`. Groepsvolume op
+    60 zetten bij leden op 40 en 25 gaf **60 en 50**, niet 60 en 60. Een oploop
+    naar een vast eindvolume moet dus **per speaker** gezet worden, nooit op de
+    groep. Bijkomend: `power_control` was bij alle geteste players `"none"`, dus
+    een MA-speaker heeft geen `TURN_ON`/`TURN_OFF`.
+
+30. **`volume_set` kapt buiten bereik stil af.** Gemeten: `-5` → 0, `150` → 100,
+    `12.5` → 12, `33.7` → 33 (afkappen, niet afronden), alle met HTTP 200. Een
+    rekenfout in de volume-oploop geeft dus geen exceptie, alleen een verkeerd
+    volume.
+
+31. **Meet een tijdgestuurde lus niet vanuit een achtergrondtabblad.** Chrome
+    knijpt `setTimeout` af: een oploop van 20 stappen van 1 s liep in paren van
+    2 stappen per 2 s (t=1.995/2.001, 3.995/4.000, …). De **totaalduur** klopte
+    op 20,004 s, dus wie alleen die rapporteert, meldt een vloeiende oploop die
+    in werkelijkheid 10 sprongen was. Meet cadans in Python, of toon per stap de
+    werkelijke tijdstempel.
+
+32. **HA's externe-stap-config-flows redirecten via `my.home-assistant.io`, en
+    `external_url` verandert dat niet.** Na het zetten van `external_url` én
+    `internal_url` op `http://localhost:8129` plus herstart — waarna
+    `hass.config.external_url` de nieuwe waarde had — bleef de `return_url` van
+    de MA-flow naar `/redirect/oauth` wijzen. Achter Docker Desktop komt de
+    callback dan niet aan. De uitweg is de instance registreren op
+    my.home-assistant.io in dezelfde browser.
+
+33. **`ps` bestaat niet in de MA-container.** Processen zoeken gaat via
+    `/proc/*/cmdline`. En de browsertool blokkeert tokens in zijn uitvoer, wat
+    prettig is maar betekent dat MA's API alleen ván binnen de pagina
+    aanroepbaar is (token uit `localStorage`, resultaat terug, token niet).
+
 26. **Music Assistant heeft geen oplopend volume dat je kunt aanroepen.** MA
     kent wel `fade_in`, maar dat is een **boolean** op `play_index`/`resume`
     (`music_assistant_client/player_queues.py:101, 193`) en de HA-integratie
     roept het **nergens** aan. Vanuit HA is er alleen `volume_set` (absoluut) en
     `volume_up`/`volume_down` (stap). Een oploop van stil naar het ingestelde
     volume in 20 seconden moet de integratie zelf maken, met herhaalde
-    `volume_set`-aanroepen.
+    `volume_set`-aanroepen. Fase 0b heeft dat gebouwd en gemeten: 20 aanroepen,
+    elk 3–6 ms, eindvolume exact. Het werkt.
+
+### Nieuw in fase 0b, live gemeten tegen MA 2.9.11
+
+Vindplaatsen in `docs/fase-0b/RAPPORT.md`.
 
 ---
 
