@@ -417,6 +417,29 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 
 ---
 
+## Projectstand
+
+| Fase | Wat het opleverde | Status |
+|---|---|---|
+| 0 | Repo-opzet, testinstance op 8129, en architectuurverificatie van vier onbekenden: `docs/fase-0/ONDERZOEK.md` | gemerged |
+| 0b | Music Assistant live geverifieerd (`docs/fase-0b/RAPPORT.md`): `playback_state` bewijst niets, groepsvolume werkt relatief, volumeresolutie is 1 %. HA↔MA-koppeling niet gelukt | gemerged |
+| **1** | **Rooktest: buildketen (lit + esbuild), CI met vier jobs, de integratie serveert en registreert haar eigen kaart langs beide routes, 8 JS- en 10 Python-tests, verificatie op de dev-instance én op een verse instance** | **deze ronde** |
+
+**Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
+`/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
+routes registreert (index-import én Lovelace-resource), een lege config flow, en
+een kaart die één regel tekst rendert. Versie `0.1.0`, bundel 16.713 bytes.
+
+**Wat er nog niet is:** wekkerlogica, opslag, WebSocket-commando's, editor,
+planning, Music Assistant. En `SPEC.md` — die komt in fase 2 en is daarna
+bindend.
+
+**Open punten uit fase 1:** CI is nog nooit gedraaid (de eerste run is die van de
+PR van fase 1), hassfest is alleen in CI te beoordelen, `getCardSize()` ontbreekt
+en masonry-weergave is niet gemeten, en `panel: true` is niet aangeraakt.
+
+---
+
 ## Meetvalkuilen in de browser
 
 Samengevat, omdat ze in DomotiApp Scene bij elkaar meer tijd hebben gekost dan
