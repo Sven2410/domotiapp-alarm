@@ -71,6 +71,8 @@ het hier ook geldt, plus wat fase 0 zelf heeft gemeten.
   Config in `.ha-dev-config/` (gitignored). **`default_config:` staat daar
   uiteengelegd, minus `my`** — zie valkuil 32; met `my` erin is geen enkele
   externe-stap-config-flow af te maken.
+  **Wat er sinds fase 3c op de instance klaarstaat** (labels, een lamp via `demo:`,
+  de MA-koppeling): zie "Waar fase 4 begint" onder Projectstand.
 - **De poorten 8123, 8124, 8125, 8126 en 8127 zijn bezet door andere projecten
   en mogen nooit gebruikt worden.**
 - **De productie-HA wordt nooit aangeraakt, ook niet gelezen.**
@@ -293,6 +295,20 @@ Alle regel- en bestandsverwijzingen hieronder zijn na te lezen in
     zegt: gebruik `TargetSelection`. Fase 0 heeft de meting nog met de oude
     klasse gedaan; gebruik in productiecode meteen `TargetSelection`.
 
+### Nieuw in fase 0b, live gemeten tegen MA 2.9.11
+
+Vindplaatsen in `docs/fase-0b/RAPPORT.md`.
+
+
+26. **Music Assistant heeft geen oplopend volume dat je kunt aanroepen.** MA
+    kent wel `fade_in`, maar dat is een **boolean** op `play_index`/`resume`
+    (`music_assistant_client/player_queues.py:101, 193`) en de HA-integratie
+    roept het **nergens** aan. Vanuit HA is er alleen `volume_set` (absoluut) en
+    `volume_up`/`volume_down` (stap). Een oploop van stil naar het ingestelde
+    volume in 20 seconden moet de integratie zelf maken, met herhaalde
+    `volume_set`-aanroepen. Fase 0b heeft dat gebouwd en gemeten: 20 aanroepen,
+    elk 3–6 ms, eindvolume exact. Het werkt.
+
 27. **`playback_state` van een MA-speaker bewijst niets.** Gemeten: nadat het
     afspeelproces van een spelende speaker was gedood, meldde MA nog steeds
     `playback_state: "playing"` met een **doorlopende** `elapsed_time` (220,3 s),
@@ -373,22 +389,9 @@ Alle regel- en bestandsverwijzingen hieronder zijn na te lezen in
     prettig is maar betekent dat MA's API alleen ván binnen de pagina
     aanroepbaar is (token uit `localStorage`, resultaat terug, token niet).
 
-26. **Music Assistant heeft geen oplopend volume dat je kunt aanroepen.** MA
-    kent wel `fade_in`, maar dat is een **boolean** op `play_index`/`resume`
-    (`music_assistant_client/player_queues.py:101, 193`) en de HA-integratie
-    roept het **nergens** aan. Vanuit HA is er alleen `volume_set` (absoluut) en
-    `volume_up`/`volume_down` (stap). Een oploop van stil naar het ingestelde
-    volume in 20 seconden moet de integratie zelf maken, met herhaalde
-    `volume_set`-aanroepen. Fase 0b heeft dat gebouwd en gemeten: 20 aanroepen,
-    elk 3–6 ms, eindvolume exact. Het werkt.
+### Nieuw in fase 3c en 3c-bis
 
-### Nieuw in fase 0b, live gemeten tegen MA 2.9.11
-
-Vindplaatsen in `docs/fase-0b/RAPPORT.md`.
-
-### Nieuw in fase 3c
-
-Vindplaatsen in `docs/fase-3c/RAPPORT.md`.
+Vindplaatsen in `docs/fase-3c/RAPPORT.md` (34–40) en `RAPPORT-BIS.md` (41–42).
 
 34. **Een mutatie die niet gevangen wordt heeft drie mogelijke oorzaken, en ze
     vragen drie verschillende dingen.** Fase 3a, 3b en 3c hebben ze alle drie
@@ -412,6 +415,14 @@ Vindplaatsen in `docs/fase-3c/RAPPORT.md`.
     Bij een test op één voorwaarde moeten de andere voorwaarden **expliciet
     onschadelijk** gemaakt worden — hier door de oploop eerst één stap te laten
     zetten, zodat het gelezen volume gelijk is aan wat de oploop zelf zette.
+
+36. **Positieve controles vangen de mutaties die een functie volledig
+    uitschakelen.** Een test die alleen op falen let, komt door een implementatie
+    die *altijd* faalt. In fase 3c wordt een groot deel van de 39 mutaties gevangen
+    door precies zo'n paar: "een kleine afwijking breekt de oploop **niet** af",
+    "een speaker die blijft staan levert **geen** melding op", "afspelen faalt ook
+    zonder `radio_mode`". Dit staat al als werkafspraak in dit bestand; A37 laat
+    zien dat het in de praktijk alsnog misgaat.
 
 37. **Een vastgehouden `hass` leest een BEVROREN states-snapshot.** HA's frontend
     **vervangt** `hass.states` bij elke statuswijziging in plaats van het te muteren,
@@ -460,14 +471,6 @@ Vindplaatsen in `docs/fase-3c/RAPPORT.md`.
     integratie **nooit**. Elke terugval of foutmelding die op die aanroep staat, vervalt
     daarmee stil. Nagelopen in fase 3c-bis voor `play_media`, dat 2,1–2,6 s blokkeert;
     die twee seconden zijn de prijs van weten dát het lukte.
-
-36. **Positieve controles vangen de mutaties die een functie volledig
-    uitschakelen.** Een test die alleen op falen let, komt door een implementatie
-    die *altijd* faalt. In fase 3c wordt een groot deel van de 39 mutaties gevangen
-    door precies zo'n paar: "een kleine afwijking breekt de oploop **niet** af",
-    "een speaker die blijft staan levert **geen** melding op", "afspelen faalt ook
-    zonder `radio_mode`". Dit staat al als werkafspraak in dit bestand; A37 laat
-    zien dat het in de praktijk alsnog misgaat.
 
 ---
 
@@ -549,11 +552,11 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 0 | Repo-opzet, testinstance op 8129, en architectuurverificatie van vier onbekenden: `docs/fase-0/ONDERZOEK.md` | gemerged |
 | 0b | Music Assistant live geverifieerd (`docs/fase-0b/RAPPORT.md`): `playback_state` bewijst niets, groepsvolume werkt relatief, volumeresolutie is 1 %. HA↔MA-koppeling niet gelukt | gemerged |
 | 1 | Rooktest: buildketen (lit + esbuild), CI met vier jobs, de integratie serveert en registreert haar eigen kaart langs beide routes, 8 JS- en 10 Python-tests, verificatie op de dev-instance én op een verse instance | gemerged |
-| 2 | `SPEC.md` als bron van waarheid: 20 secties met opslagschema, negen WebSocket-commando's, foutgedrag, wat niet in v1 zit, en tien open vragen | in PR #4 |
+| 2 | `SPEC.md` als bron van waarheid: 20 secties met opslagschema, negen WebSocket-commando's, foutgedrag, wat niet in v1 zit, en tien open vragen | gemerged |
 | 2b | De tien open vragen gesloten en sectie 21 verwijderd. `last_failure` hernoemd naar `last_message` met een `severity`. `radio_mode` en de URI-controle doorgeschoven naar fase 3, met beide takken uitgeschreven | gemerged |
 | 3a | De server-side laag zonder klok: `store.py` met de kapotte-data-scheiding, `validatie.py` en `volgende.py` (beide puur), `entiteiten.py` met de labelfiltering, en de negen WebSocket-commando's. 112 Python-tests, 13 mutaties nagelopen | gemerged |
 | 3b | De planner: `planner.py` (plannen, inhaalslag, respijtvenster, herplannen), `afvuren.py` als naad met 3c, `meldingen.py` met de drie kanalen en de repair issues die 3a openliet. 137 Python-tests, 17 mutaties nagelopen, live gemeten afwijking 12 ms | gemerged |
-| 3c | Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py` (available + URI-controle met de omkering van 11.2.1), `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 213 Python-tests, 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost (oorzaak: de `my`-integratie, niet `external_url`) en de livecontrole live gedaan: **+2,153 s afwijking, oploop 1,006 s per stap, audio bewezen aan de speakerkant. En één blokkerende bevinding: de URI-controle van SPEC 11.2 houdt een werkende SomaFM-wekker tegen | in PR #8 |
+| 3c | Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py`, `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost — oorzaak was de `my`-integratie, niet `external_url`. Live: +2,153 s afwijking, oploop 1,006 s per stap, audio bewezen aan de speakerkant. Eén blokkerende bevinding, opgelost in 3c-bis | in PR #8 |
 | **3c-bis** | **De URI-controle vervalt (SPEC 11.2 herschreven, 11.2.1 vervallen, 11.2.2 met een nieuw criterium). De SomaFM-wekker die in 3c niet afging, gaat nu af met 0 van 87 s stilte. 212 tests, 5 mutaties. `play_media` blokkeert 2,1–2,6 s en dat is niet weg te nemen zonder de foutdetectie te verliezen (`core.py:2953-2959`)** | **deze ronde, PR #8** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
@@ -608,12 +611,12 @@ bouwen; er is geen server-side werk meer dat de kaart nodig heeft.
    stand van gisteravond voordat de oploop begint — het verschil tussen wakker worden
    en wakker schrikken. En het volume wordt **gelezen** vóór het op 0 gaat, anders zet
    het terugzetten bij het stoppen de speaker op stil.
-2. **Twijfel valt niet altijd dezelfde kant op.** Bij de speakercontrole en bij
-   `radio_mode` betekent twijfel *niet doen*; bij de URI-controle betekent twijfel
-   *wél afgaan* (SPEC 11.2.1). Dat is geen inconsistentie maar dezelfde afweging op
-   andere feiten, en de twee zien er in code op elkaar lijken — daarom staan ze in
-   verschillende modules, met een `Uitkomst`-enum van **drie** waarden in plaats van
-   een `bool`.
+2. **Een controle die vals alarm slaat is erger dan geen controle.** Dit was in fase 3c
+   nog "twijfel valt niet altijd dezelfde kant op", met de URI-controle als voorbeeld.
+   Die controle is in 3c-bis **vervallen** omdat hij voor een hele provider onterecht
+   afging. Wat overblijft: `radio_mode` is de énige plek waar twijfel tot *weglaten*
+   leidt (SPEC 8.3.1), en de speakercontrole is de enige plek waar twijfel niet kan
+   optreden. Zie valkuil 41.
 3. **De terugval is de garantie, niet de lijst.** `SIMILAR_TRACKS_PROVIDERS` kan stil
    verouderen; daarom vangt `afvuren.py` de HTTP 500 van `play_media` op en probeert
    het opnieuw **zonder** `radio_mode`. Vertrouwen op de lijst zou betekenen dat een
@@ -622,6 +625,23 @@ bouwen; er is geen server-side werk meer dat de kaart nodig heeft.
 Verder: `async_call_later` en geen `asyncio.sleep` voor de oploop, de tweede
 noodremcontrole en de stoptimer. Dat levert een afzegbare unsub op **en** het loopt op
 HA's klok, dus een test van 20 stappen kost geen 20 seconden.
+
+**Wat er staat na fase 3c-bis:** hetzelfde, minus één ding. De **voorafgaande
+URI-controle is vervallen** (SPEC 11.2), omdat de opgeslagen naam voor een hele provider
+onvindbaar bleek in MA's eigen zoekindex en de controle daardoor werkende wekkers
+tegenhield. Gevolgen die je moet weten:
+
+- er is **geen** controle op het geluid vóór het afspelen. Een dood geluid komt boven bij
+  `play_media` (dan gaat de wekker niet af, met melding `sound_gone`) of bij de tweede
+  noodremcontrole vijf seconden later (dan is de wekker wél afgegaan en luidt de melding
+  `speaker_lost_during_play`, "mogelijk niet hoorbaar geweest");
+- **SPEC 11.3 draagt daardoor meer dan het deed** en is het enige net onder een dood
+  geluid. Niet verlengen of weghalen zonder dat te beseffen;
+- `Uitkomst.ONBEKEND` is uit `noodrem.py` verdwenen, met een comment dat hij terug moet
+  zodra SPEC 11.2.2 in werking treedt.
+
+Live bevestigd: dezelfde SomaFM-wekker die in 3c niet afging, gaat af met **0 van 87
+seconden** stilte aan de speakerkant.
 
 **Wat de livecontrole van 3c live heeft aangetoond** (`docs/fase-3c/RAPPORT.md`):
 
@@ -638,10 +658,13 @@ HA's klok, dus een test van 20 stappen kost geen 20 seconden.
   `friendly_name`, `supported_features` en `entity_picture` over — dus filteren op
   `supported_features` is de juiste keuze, en `alarms/save` accepteert de speaker nog.
 
-**De totale afwijking is +2,153 s**, en dat is **niet** de noodrem: de URI-controle kost
-**5 ms**. 2,131 s van de 2,153 zit in `music_assistant.play_media`, die blokkeert tot MA
-de stream heeft opgezet. Gevolg: de oploop begint op +3,1 s en is klaar op +22,3 s. Bij
-een langzamere provider loopt dat verder uit.
+**De totale afwijking is +2,153 s** (fase 3c) en **+2,565 s** (fase 3c-bis, andere
+provider), en dat is **niet** de noodrem: die kost 10 ms sinds de URI-controle vervallen
+is, en kostte er 17 mét die controle. Vrijwel alles zit in
+`music_assistant.play_media`, die 2,1–2,6 s blokkeert tot MA de stream heeft opgezet —
+**en het verschil zit niet in de provider**, dus er is er geen te kiezen die dit wegneemt.
+Gevolg: de oploop begint op +3,1 à +3,6 s en is klaar op +22,3 à +22,7 s in plaats van
++20 s. Zie het openstaande punt hieronder; niet-blokkerend aanroepen kan niet.
 
 **Openstaand uit 3b, en in 3c gesloten:** de lezing van SPEC 13.4 stap 4. De eigenaar
 koos de letterlijke lezing — een gemist moment buiten het respijtvenster **verbruikt**
@@ -661,9 +684,50 @@ verwerking):
   controle zélf, dan wordt `radio_mode` **weggelaten**: hinderlijk is beter dan stil.
 - **De directe URI-controle wordt NIET gebruikt** (SPEC 11.2): `music/item_by_uri`
   bestaat en geeft drie uitkomsten, maar vereist `entry.runtime_data.mass` — de
-  binnenkant van een andere integratie, en dat breekt bij een update stilletjes. De
-  zoekroute is de vastgelegde route; de directe controle staat als **voorkeursoptie**
-  in SPEC 11.2.2 zodra MA hem als service publiceert.
+  binnenkant van een andere integratie, en dat breekt bij een update stilletjes.
+  **ACHTERHAALD DOOR 3c-bis**, en het is nuttig te weten hoe: de zoekroute die toen als
+  alternatief werd gekozen bleek voor een hele provider onbruikbaar en is vervallen. Er
+  is nu **geen** voorafgaande controle, en `music/item_by_uri` is daarmee niet langer het
+  betere alternatief maar de **enige** route — zie SPEC 11.2.2. De afweging over
+  `runtime_data.mass` staat nog, maar de weegschaal is gekanteld.
+
+### Waar fase 4 begint
+
+De server-side laag is af en `SPEC.md` is bindend en volledig. Wat er nog niet is: **de
+kaart en de editor**. SPEC 15 beschrijft de negen commando's die de kaart mag gebruiken;
+dat is de bron, niet dit bestand. Wat hieronder staat is wat je uit SPEC *niet* kunt
+lezen omdat het gemeten is.
+
+**Vier dingen die de kaart moet doen en waar je anders tegenaan loopt:**
+
+1. **Kleed een zoekresultaat uit vóór het opslaan.** `sound/search` geeft `album` en
+   `artists` mee; `alarms/save` weigert die met `invalid_format` (valkuil 39). Het
+   `sound`-object mag alleen `uri`, `name`, `media_type` en `image` bevatten.
+2. **Reken op drie soorten gebeurtenissen uit `ringing/subscribe`**: `started`, `stopped`
+   (met `reason` `user`/`timeout`/`deleted`) en `failed` (met `reason` = de meldingssoort
+   en een `text`). Alle drie zijn live gezien in fase 3c.
+3. **Toon `last_message` op kleur en toon van `severity`**, niet op `kind`. `error` en
+   `notice` zien er verschillend uit (SPEC 11.7); `kind` is om op te vergelijken.
+4. **`getGridOptions` moet `rows: "auto"` teruggeven** (valkuil 12). Een wekkerkaart
+   verandert van hoogte, dus een vast getal laat hem over de "+"-knop lopen.
+
+**En bij het meten in de browser:** valkuil 37 (een vastgehouden `hass` leest een bevroren
+`states`-snapshot) heeft in fase 3c een geslaagde toets als mislukt laten lijken. Haal
+`document.querySelector('home-assistant').hass` opnieuw op na elke handeling.
+
+**De dev-instance is klaar om in te meten**, en dat was niet triviaal:
+
+| | |
+|---|---|
+| Music Assistant | gekoppeld; drie players (`wekker_slaapkamer`, `wekker_keuken`, `wekkergroep`) |
+| Labels | `Music Assistant Wekker` op `media_player.wekker_slaapkamer`, `Verlichting Wekker` op `light.bed_light` |
+| Lamp | via `demo:` in `configuration.yaml`; er stond geen enkele `light`-entiteit |
+| Speakers | twee snapclients in de MA-container; herstarten met het commando bij "Music Assistant-testserver" |
+| Geluid dat werkt | zoek op `Beat Blender`, kies de `radiobrowser://`- of de `somafm://`-treffer |
+| Persoon | `person.dev` |
+
+Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
+**`http://192.168.1.212:8095`** (het LAN-IP — zie valkuil 32 en de MA-sectie).
 
 **Openstaande punten met een fase erbij** — zodat ze niet blijven liggen:
 
@@ -673,8 +737,10 @@ verwerking):
 | **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
 | **De volume-oploop begint 2,1–2,6 s te laat** doordat `play_media` blokkeert tot MA de stream heeft opgezet. Niet-blokkerend aanroepen kan niet: `core.py:2953-2959` vangt de exceptie binnen HA af, en dan vervallen de `radio_mode`-terugval én de foutmelding. De oploop eerder starten verandert SPEC 9.1 en de betekenis van het `started`-event. **Aanbeveling die niet gebouwd is:** de oploop laten *inhalen* — begin op de stap die bij de verstreken tijd hoort. Meting ligt vast in SPEC 20.1 punt 9 | `afvuren.py` / SPEC 9.1, 9.3 | **beslissing van de eigenaar** |
 | **De tekst van SPEC 11.7 bij `sound_gone` stelt het zekerder dan de code weet**: "het gekozen geluid bestaat niet meer" terwijl er alleen vaststaat dat het niet startte. De soort is juist, de formulering claimt te veel. `"kon niet gestart worden"` zou nauwkeuriger zijn | SPEC 11.7 | **eigenaar**, woordkeuze |
-| `getCardSize()` ontbreekt; masonry niet gemeten | de kaart | 4 |
-| `panel: true` niet aangeraakt | de kaart | 4 of later |
+| `getCardSize()` ontbreekt; masonry niet gemeten. `getGridOptions` moet `rows: "auto"` geven (valkuil 12) | de kaart | **4** |
+| `panel: true` niet aangeraakt (`frontend#52570`); voor de stoptoestand inmiddels een vastgelegde beperking (SPEC 20.1 punt 2) | de kaart | 4 of later |
+| **De kaart moet een zoekresultaat uitkleden** vóór `alarms/save`: `album` en `artists` worden geweigerd (valkuil 39) | de editor | **4** |
+| **Album, artiest en los nummer zijn nooit live getoetst** — geen streamingprovider op deze instance (fase 0b, T3). De editor moet er wél mee omgaan, en de waarschuwing uit SPEC 8.3.1 hoort juist bij die soorten | de editor | **4**, en de eigenaar toetst het op zijn eigen HA |
 
 Bij de twee kaartpunten in die tabel: `panel: true` staat in DomotiApp Scene als
 openstaand punt (`frontend#52570`) en raakt juist kiosk-opstellingen. Voor de
