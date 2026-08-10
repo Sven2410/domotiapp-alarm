@@ -22,6 +22,7 @@ import datetime as dt
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pytest
 from homeassistant.components.media_player import MediaPlayerEntityFeature
 from homeassistant.const import EVENT_CORE_CONFIG_UPDATE
 from homeassistant.core import HomeAssistant
@@ -112,8 +113,58 @@ async def zet_op(
     return registry_id
 
 
+_GEVUURD: list[tuple[str, str, str]] = []
+"""Wat de planner heeft laten afgaan: `(registry_id, alarm_id, moment)` per keer.
+
+Modulebreed en niet per test, zodat `afgegaan()` en `stop()` hun signatuur uit fase 3b
+kunnen houden. De fixture hieronder maakt hem leeg vóór elke test.
+"""
+
+
+@pytest.fixture(autouse=True)
+def _vuur_zonder_geluid(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, str]]:
+    """Vervang het afvuren door de boekhouding die fase 3b deed. Bijgewerkt in fase 3c.
+
+    **Waarom dit bestaat.** Fase 3c gaf `afvuren.async_laat_afgaan` een noodrem, een
+    speaker, een lamp en drie timers. Die aan elke planner-test hangen zou twee dingen
+    kapotmaken: de tests zouden omvallen op iets wat niets met plannen te maken heeft,
+    en — erger — de stoptimer van 30 minuten zou bij een kloksprong van dagen
+    meevuren, waarna het register leeg is en "is hij afgegaan?" onbruikbaar wordt.
+
+    Deze fixture houdt dit bestand dus over **wanneer** een wekker afgaat. Wat er dan
+    gebeurt, staat in `test_afvuren.py`.
+
+    **Wat dat verbergt, en waar dat gedekt is.** Dat de planner werkelijk dít pad
+    aanroept, met de juiste argumenten, is met deze fixture niet meer te zien. Daarvoor
+    bestaat `test_afvuren.py::test_de_planner_laat_een_wekker_echt_afspelen`: die legt
+    de hele keten af zonder enige vervanging, tot aan een speaker die wordt
+    aangesproken. Zonder die ene test zou deze fixture precies de valkuil zijn waar
+    CLAUDE.md voor waarschuwt.
+    """
+    _GEVUURD.clear()
+
+    async def _boekhouding(hass, registry_id, person_entity_id, wekker, moment) -> None:
+        # Precies wat fase 3b deed: `last_fired` op het **bedoelde** moment. Dat veld
+        # is de rem waar de planner zelf op vertrouwt (SPEC 13.4 stap 3), dus het moet
+        # hier echt geschreven worden — anders zouden de remtests niets meten.
+        store = hass.data[DOMAIN][DATA_STORE]
+        await store.async_werk_velden_bij(
+            registry_id, wekker["id"], {"last_fired": moment.isoformat()}
+        )
+        _GEVUURD.append((registry_id, wekker["id"], moment.isoformat()))
+
+    monkeypatch.setattr(afvuren, "async_laat_afgaan", _boekhouding)
+    return _GEVUURD
+
+
 def afgegaan(hass: HomeAssistant, registry_id: str, alarm_id: str = ALARM_ID) -> bool:
-    return ringing.register_van(hass).is_afgaand(registry_id, alarm_id)
+    """Heeft de planner deze wekker laten afgaan sinds de laatste `stop()`?
+
+    Fase 3b las dit uit het ringing-register. Dat kan niet meer: het register is sinds
+    fase 3c een eigenschap van het **afvuren**, en dat is hier vervangen. Wat er
+    overblijft is precies wat de planner doet: `async_laat_afgaan` aanroepen.
+    """
+    return any(rid == registry_id and aid == alarm_id for rid, aid, _ in _GEVUURD)
 
 
 def uit_opslag(hass: HomeAssistant, registry_id: str, alarm_id: str = ALARM_ID) -> dict:
@@ -128,9 +179,13 @@ async def tik(hass: HomeAssistant, freezer, doel: dt.datetime) -> None:
 
 
 async def stop(hass: HomeAssistant, registry_id: str) -> None:
-    await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
-    )
+    """Wis de waarneming, zodat een volgende `afgegaan()` over de vólgende keer gaat.
+
+    In fase 3b stopte dit ook de wekker in het ringing-register. Dat register wordt hier
+    niet meer gevuld (zie `_vuur_zonder_geluid`); het echte stoppen staat in
+    `test_afvuren.py`.
+    """
+    _GEVUURD.clear()
 
 
 # --- 1. herhaaldagen ----------------------------------------------------
@@ -546,71 +601,12 @@ async def test_najaar_0230_vuurt_twee_keer(
 
 
 # --- ringing en de events ---------------------------------------------
-
-
-async def test_started_event_gaat_naar_de_abonnees(
-    hass: HomeAssistant, hass_storage, freezer
-) -> None:
-    """Een afgaande wekker stuurt `started` naar de abonnees (SPEC 15.9).
-
-    NIEUW GEDRAG. Fase 3a kon alleen aantonen dat het doorgeefluik werkte door het
-    register zélf te vullen; hier vult de **planner** het, en dat is het stuk dat 3a
-    nog niet kon bewijzen.
-    """
-    freezer.move_to(dt.datetime(2026, 8, 10, 6, 0, tzinfo=AMS))
-    registry_id = await zet_op(
-        hass,
-        [volledige_wekker(time="06:45", days=[1, 2, 3, 4, 5], name="Werk")],
-        hass_storage,
-    )
-
-    ontvangen: list[dict] = []
-    ringing.register_van(hass).abonneer(ontvangen.append)
-
-    await tik(hass, freezer, dt.datetime(2026, 8, 10, 6, 45, 1, tzinfo=AMS))
-
-    assert ontvangen == [
-        {
-            "event": "started",
-            "person": PERSON_ENTITY_ID,
-            "alarm_id": ALARM_ID,
-            "name": "Werk",
-            "time": "06:45",
-        }
-    ]
-    assert ringing.register_van(hass).afgaand_voor(registry_id) == [ALARM_ID]
-
-
-async def test_stop_stuurt_stopped_event_en_is_idempotent(
-    hass: HomeAssistant, hass_storage, freezer
-) -> None:
-    """NIEUW GEDRAG (SPEC 15.9), en stoppen is idempotent (SPEC 15.8)."""
-    freezer.move_to(dt.datetime(2026, 8, 10, 6, 50, tzinfo=AMS))
-    registry_id = await zet_op(
-        hass, [volledige_wekker(time="06:45", days=[1, 2, 3, 4, 5])], hass_storage
-    )
-    assert afgegaan(hass, registry_id), "ingehaald, dus hij loopt"
-
-    ontvangen: list[dict] = []
-    ringing.register_van(hass).abonneer(ontvangen.append)
-
-    assert await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
-    )
-    assert ontvangen == [
-        {
-            "event": "stopped",
-            "person": PERSON_ENTITY_ID,
-            "alarm_id": ALARM_ID,
-            "reason": "user",
-        }
-    ]
-    assert not afgegaan(hass, registry_id)
-
-    assert not await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
-    ), "stoppen wat niet loopt is geen fout, maar levert ook geen tweede bericht op"
-    assert len(ontvangen) == 1
+#
+# De twee tests over het `started`- en `stopped`-event stonden hier in fase 3b, toen
+# het register nog door de planner gevuld leek. Sinds fase 3c vult `afvuren.py` het,
+# met een echte speaker erachter, en staan ze in `test_afvuren.py`:
+# `test_de_started_en_stopped_events_gaan_naar_de_abonnees`. Ze zijn niet vervallen —
+# ze staan op de laag waar ze thuishoren.
 
 
 async def test_websocket_save_herplant(

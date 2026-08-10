@@ -9,7 +9,9 @@ from typing import Any
 import pytest
 
 from homeassistant.components.lovelace.const import LOVELACE_DATA
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -193,6 +195,118 @@ def geldige_wekker(**overschrijf: Any) -> dict[str, Any]:
     }
     wekker.update(overschrijf)
     return wekker
+
+
+class Speelhuis:
+    """De buitenwereld van het afvuren, nagebouwd en meetbaar (SPEC 9, 11, 12).
+
+    Wat hier gemockt wordt zijn **HA-services van andere integraties**, en dat is de
+    enige eerlijke manier: `music_assistant` is er niet in een test, en de vier
+    aanroepen die deze fase doet (`play_media`, `volume_set`, `media_stop`,
+    `light.turn_on`) zijn precies de grens van dit product.
+
+    **Er wordt niets van onze eigen code gemockt.** Dat is het verschil met een test
+    die "de setup faalt niet" bewijst: de volgorde, de clamping, de terugval op
+    `radio_mode` en het terugzetten van het volume worden allemaal uit `aanroepen`
+    afgelezen — één lijst, in de werkelijke volgorde, met de werkelijke argumenten.
+
+    `faal` bepaalt welke aanroepen een `HomeAssistantError` geven. `zoekresultaat`
+    bepaalt wat de URI-controle terugvindt; `zoekfout` laat de zoekopdracht zelf
+    stuklopen, wat een heel andere uitkomst hoort te hebben (SPEC 11.2.1).
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+        self.aanroepen: list[tuple[str, dict[str, Any]]] = []
+        self.faal: set[str] = set()
+        self.zoekresultaat: dict[str, Any] | None = None
+        self.zoekfout: Exception | None = None
+        # Het volume dat de nagebootste speaker "heeft". `volume_set` werkt het bij,
+        # zodat de oploop zijn eigen waarde terugleest zoals bij een echte speaker.
+        self.volume_niveau: float | None = 0.5
+        self.speaker = "media_player.slaapkamer"
+
+    def _boek(self, naam: str, data: dict[str, Any]) -> None:
+        self.aanroepen.append((naam, dict(data)))
+        if naam in self.faal:
+            raise HomeAssistantError(f"{naam} geweigerd door de test")
+
+    def namen(self) -> list[str]:
+        """Alleen de namen, in volgorde. Hiermee wordt de volgorde uit SPEC 9.1 getoetst."""
+        return [naam for naam, _ in self.aanroepen]
+
+    def volumes(self) -> list[int]:
+        """De volumepercentages die er gezet zijn, in volgorde."""
+        return [
+            round(data["volume_level"] * 100)
+            for naam, data in self.aanroepen
+            if naam == "media_player.volume_set"
+        ]
+
+    def register(self) -> None:
+        """Registreer de vier services plus een geladen MA-config-entry."""
+
+        async def _play(call) -> None:
+            self._boek("music_assistant.play_media", call.data)
+
+        async def _zoek(call) -> dict[str, Any]:
+            self.aanroepen.append(("music_assistant.search", dict(call.data)))
+            if self.zoekfout is not None:
+                raise self.zoekfout
+            return self.zoekresultaat or {}
+
+        async def _volume(call) -> None:
+            self._boek("media_player.volume_set", call.data)
+            self.volume_niveau = call.data["volume_level"]
+            self._werk_state_bij()
+
+        async def _stop(call) -> None:
+            self._boek("media_player.media_stop", call.data)
+
+        async def _licht(call) -> None:
+            self._boek("light.turn_on", call.data)
+
+        self.hass.services.async_register("music_assistant", "play_media", _play)
+        self.hass.services.async_register(
+            "music_assistant",
+            "search",
+            _zoek,
+            supports_response=SupportsResponse.ONLY,
+        )
+        self.hass.services.async_register("media_player", "volume_set", _volume)
+        self.hass.services.async_register("media_player", "media_stop", _stop)
+        self.hass.services.async_register("light", "turn_on", _licht)
+
+        # `noodrem.controleer_speaker` en `async_controleer_uri` vragen naar een geladen
+        # MA-entry. Zonder deze zou elke test hier al afketsen op `ma_unavailable`, en
+        # dan zou geen enkele test iets over het afvuren zeggen.
+        ma_entry = MockConfigEntry(domain="music_assistant", title="Music Assistant")
+        ma_entry.add_to_hass(self.hass)
+        ma_entry.mock_state(self.hass, ConfigEntryState.LOADED)
+
+    def _werk_state_bij(self) -> None:
+        """Zet het gelezen volume in de state, zoals een echte speaker zou doen."""
+        state = self.hass.states.get(self.speaker)
+        if state is None:
+            return
+        attributen = dict(state.attributes)
+        if self.volume_niveau is None:
+            attributen.pop("volume_level", None)
+        else:
+            attributen["volume_level"] = self.volume_niveau
+        self.hass.states.async_set(self.speaker, state.state, attributen)
+
+    def zet_volume_op(self, pct: int | None) -> None:
+        """Draai zelf aan de knop, zoals een gebruiker (SPEC 9.3)."""
+        self.volume_niveau = None if pct is None else pct / 100
+        self._werk_state_bij()
+
+    def laat_speaker_wegvallen(self) -> None:
+        self.hass.states.async_set(self.speaker, "unavailable", {})
+
+    def vind(self, uri: str, media_type: str = "radio") -> None:
+        """Laat de URI-controle deze URI vinden (SPEC 11.2, vergelijking op de URI)."""
+        self.zoekresultaat = {f"{media_type}s": [{"uri": uri, "name": "iets"}]}
 
 
 async def lees_resources(hass: HomeAssistant) -> list[dict[str, Any]]:

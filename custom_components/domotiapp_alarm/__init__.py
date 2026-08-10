@@ -29,7 +29,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
-from . import meldingen, planner as planner_mod, resource, websocket
+from . import afvuren, meldingen, planner as planner_mod, resource, websocket
 from .const import (
     CARD_FILENAME,
     CARD_URL_PATH,
@@ -152,6 +152,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if (planner := data.pop(DATA_PLANNER, None)) is not None:
             planner.async_stop()
             _LOGGER.debug("Planner gestopt en listeners opgezegd")
+
+        # Dan de wekkers die op dit moment afgaan. Hun oploop, tweede noodremcontrole
+        # en stoptimer zijn `async_call_later`s: laat je die staan, dan tikt de eerste
+        # over een `hass.data` die hieronder wordt losgelaten. En zonder stoptimer
+        # speelt de muziek door zonder dat er nog iemand is die hem afzet (SPEC 9.4).
+        if gestopt := await afvuren.async_stop_alles(hass):
+            _LOGGER.debug("%d afgaande wekker(s) gestopt bij unload", gestopt)
 
         if js_url := data.pop(DATA_JS_URL, None):
             remove_extra_js_url(hass, js_url)
