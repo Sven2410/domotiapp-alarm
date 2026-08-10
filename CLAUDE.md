@@ -156,9 +156,15 @@ vindplaats wordt zo'n lijst binnen twee maanden folklore.
    uit de cache** (`cache.match`, buiten de service worker om) en navigeer
    daarna meteen.
 
-5. **De browsertool schrijft geen screenshotbestanden weg.** Vijf rondes op rij
-   in DomotiApp Scene. Reken daarop: het bewijs is een DOM-uitlezing, een lijst
-   service-aanroepen, een bytegrootte of een gemeten positie in pixels.
+5. **~~De browsertool schrijft geen screenshotbestanden weg.~~ ACHTERHAALD in
+   fase 1.** In DomotiApp Scene lukte dat vijf rondes op rij niet; met
+   `save_to_disk: true` schrijft de tool het bestand nu wél weg en geeft hij het
+   pad terug. Twee screenshots van fase 1 staan in `docs/fase-1/RAPPORT.md`
+   genoemd.
+   **Wat blijft gelden:** een screenshot is zwakker bewijs dan een meting. "33 px
+   overloop, de tegels schoven van 208 naar 241" is controleerbaar, "het ziet er
+   scheef uit" niet. Gebruik plaatjes ter illustratie, en DOM-uitlezingen,
+   bytegroottes en gemeten posities als bewijs.
 
 6. **`docker exec` met `/`-paden vanuit Git Bash** vereist `MSYS_NO_PATHCONV=1`,
    anders mangelt Git Bash het pad naar `C:/Program Files/...`. In fase 0 ook
