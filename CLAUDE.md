@@ -68,7 +68,9 @@ het hier ook geldt, plus wat fase 0 zelf heeft gemeten.
 - Windows 11, PowerShell, `C:\dev\domotiapp-alarm`.
 - **Testinstance:** container `ha-alarm`, compose-project `domotiapp-alarm-dev`,
   **poort 8129**, image gepind op `2026.8` (draait 2026.8.1).
-  Config in `.ha-dev-config/` (gitignored).
+  Config in `.ha-dev-config/` (gitignored). **`default_config:` staat daar
+  uiteengelegd, minus `my`** — zie valkuil 32; met `my` erin is geen enkele
+  externe-stap-config-flow af te maken.
 - **De poorten 8123, 8124, 8125, 8126 en 8127 zijn bezet door andere projecten
   en mogen nooit gebruikt worden.**
 - **De productie-HA wordt nooit aangeraakt, ook niet gelezen.**
@@ -86,7 +88,13 @@ het hier ook geldt, plus wat fase 0 zelf heeft gemeten.
   (audiostream). Config in `.ma-dev-config/` (gitignored).
 - **HA bereikt MA op `http://host.docker.internal:8095`.** Binnen de
   HA-container wijst `localhost` naar HA zelf. De **browser** moet juist
-  `localhost:8095` gebruiken, want die kent `host.docker.internal` niet.
+  `localhost:8095` gebruiken, want die kent `host.docker.internal` niet — gemeten
+  in fase 3c: `ping host.docker.internal` op de host geeft "could not find host".
+  **Voor de config flow gebruik je geen van beide maar het LAN-IP van de host**
+  (`http://192.168.1.212:8095`, gemeten bereikbaar van *beide* kanten): de flow
+  bouwt zijn login-URL uit de URL die je HA geeft, dus met `host.docker.internal`
+  opent de browser een adres dat hij niet kan vinden. Dat IP komt van DHCP en kan
+  veranderen.
 - **MA vereist authenticatie** (schema 31, min 28). Er is geen optie om dat uit
   te zetten — gezocht op `DISABLE_AUTH|no_auth|allow_anonymous`, nul treffers.
   De eerste admin maakt de **eigenaar** aan via `http://localhost:8095/setup`;
@@ -323,8 +331,42 @@ Alle regel- en bestandsverwijzingen hieronder zijn na te lezen in
     `internal_url` op `http://localhost:8129` plus herstart — waarna
     `hass.config.external_url` de nieuwe waarde had — bleef de `return_url` van
     de MA-flow naar `/redirect/oauth` wijzen. Achter Docker Desktop komt de
-    callback dan niet aan. De uitweg is de instance registreren op
-    my.home-assistant.io in dezelfde browser.
+    callback dan niet aan.
+
+    **OORZAAK GEVONDEN in fase 3c, en het is niet de URL.**
+    `helpers/config_entry_oauth2_flow.py:74-85`:
+
+    ```python
+    def async_get_redirect_uri(hass) -> str:
+        if "my" in hass.config.components:
+            return MY_AUTH_CALLBACK_PATH       # my.home-assistant.io
+        if (req := http.current_request.get()) is None:
+            raise RuntimeError("No current request in context")
+        if (ha_host := req.headers.get(HEADER_FRONTEND_BASE)) is None:
+            raise RuntimeError("No header in request")
+        return f"{ha_host}{AUTH_CALLBACK_PATH}"
+    ```
+
+    Die **eerste regel gaat vóór alles**. Zolang de `my`-integratie geladen is,
+    wordt `external_url` in dit pad *nooit gelezen* — het was dus geen
+    configuratiefout maar een controlevraag die er niet aan te pas komt.
+    `my` zit in `default_config`.
+
+    **De uitweg** (gedaan in fase 3c, staat in `.ha-dev-config/configuration.yaml`):
+    `default_config:` uiteenleggen in zijn 22 dependencies **minus `my`**. Dan valt
+    HA terug op de header `HA-Frontend-Base` die de frontend zelf meestuurt, en
+    blijft de hele flow op `http://localhost:8129`. `my` levert alleen
+    /redirect-koppelingen naar documentatie.
+
+    **Twee dingen die daarbij horen.** Ten eerste: een flow die je **niet** vanuit
+    de echte frontend start (een `fetch` naar `/api/config/config_entries/flow`)
+    heeft die header niet, en dan valt de MA-flow terug op zijn
+    `auth_manual`-stap — die om een long-lived token vraagt. Ten tweede: de
+    login-URL wordt gebouwd uit de URL die je HA geeft, dus met
+    `host.docker.internal:8095` opent de browser een adres dat hij niet kent.
+    **Gebruik het LAN-IP van de host** (`http://192.168.1.212:8095`): dat is
+    bereikbaar vanuit de HA-container én vanuit de browser, en dan hoeft er in de
+    adresbalk niets herschreven te worden. Let op dat dat IP van DHCP komt.
 
 33. **`ps` bestaat niet in de MA-container.** Processen zoeken gaat via
     `/proc/*/cmdline`. En de browsertool blokkeert tokens in zijn uitvoer, wat
@@ -343,6 +385,41 @@ Alle regel- en bestandsverwijzingen hieronder zijn na te lezen in
 ### Nieuw in fase 0b, live gemeten tegen MA 2.9.11
 
 Vindplaatsen in `docs/fase-0b/RAPPORT.md`.
+
+### Nieuw in fase 3c
+
+Vindplaatsen in `docs/fase-3c/RAPPORT.md`.
+
+34. **Een mutatie die niet gevangen wordt heeft drie mogelijke oorzaken, en ze
+    vragen drie verschillende dingen.** Fase 3a, 3b en 3c hebben ze alle drie
+    gezien, en ze verwarren is de manier waarop deze oefening waardeloos wordt:
+
+    | Oorzaak | Hoe je het vaststelt | Wat je doet |
+    |---|---|---|
+    | **testgat** | de regel is bereikbaar en doet iets waarneembaars | test erbij (fase 3c, A37) |
+    | **redundante maar bereikbare verdediging** | een ánder pad komt er wél langs | test op dát pad (fase 3b P3, fase 3c A19) |
+    | **onbereikbare code** | narekenen: er is geen invoer waarbij de regel iets verandert | **regel eruit**, meting in een comment (fase 3c A14) |
+
+    De verleiding bij de tweede is hem voor dood te verklaren; bij de derde is het
+    een test te verzinnen. Beide zijn fout. Een test op onbereikbare code bewijst
+    niets en suggereert dekking die er niet is.
+
+35. **Een test die de juiste uitkomst om de verkeerde reden krijgt, is geen test.**
+    Fase 3c's eerste poging om A19 te vangen (de register-controle in de oploop)
+    slaagde ogenschijnlijk, maar wat er werkelijk afbrak was `wijkt_af`: na een
+    volledige stop staat het volume weer op de oude waarde terwijl de oploop 0 had
+    gezet, en dat is een afwijking van 50 procentpunt. De mutatie bleef ongevangen.
+    Bij een test op één voorwaarde moeten de andere voorwaarden **expliciet
+    onschadelijk** gemaakt worden — hier door de oploop eerst één stap te laten
+    zetten, zodat het gelezen volume gelijk is aan wat de oploop zelf zette.
+
+36. **Positieve controles vangen de mutaties die een functie volledig
+    uitschakelen.** Een test die alleen op falen let, komt door een implementatie
+    die *altijd* faalt. In fase 3c wordt een groot deel van de 39 mutaties gevangen
+    door precies zo'n paar: "een kleine afwijking breekt de oploop **niet** af",
+    "een speaker die blijft staan levert **geen** melding op", "afspelen faalt ook
+    zonder `radio_mode`". Dit staat al als werkafspraak in dit bestand; A37 laat
+    zien dat het in de praktijk alsnog misgaat.
 
 ---
 
@@ -427,7 +504,8 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 2 | `SPEC.md` als bron van waarheid: 20 secties met opslagschema, negen WebSocket-commando's, foutgedrag, wat niet in v1 zit, en tien open vragen | in PR #4 |
 | 2b | De tien open vragen gesloten en sectie 21 verwijderd. `last_failure` hernoemd naar `last_message` met een `severity`. `radio_mode` en de URI-controle doorgeschoven naar fase 3, met beide takken uitgeschreven | gemerged |
 | 3a | De server-side laag zonder klok: `store.py` met de kapotte-data-scheiding, `validatie.py` en `volgende.py` (beide puur), `entiteiten.py` met de labelfiltering, en de negen WebSocket-commando's. 112 Python-tests, 13 mutaties nagelopen | gemerged |
-| **3b** | **De planner: `planner.py` (plannen, inhaalslag, respijtvenster, herplannen), `afvuren.py` als naad met 3c, `meldingen.py` met de drie kanalen en de repair issues die 3a openliet. 137 Python-tests, 17 mutaties nagelopen, live gemeten afwijking 12 ms** | **deze ronde** |
+| 3b | De planner: `planner.py` (plannen, inhaalslag, respijtvenster, herplannen), `afvuren.py` als naad met 3c, `meldingen.py` met de drie kanalen en de repair issues die 3a openliet. 137 Python-tests, 17 mutaties nagelopen, live gemeten afwijking 12 ms | gemerged |
+| **3c** | **Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py` (available + URI-controle met de omkering van 11.2.1), `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 213 Python-tests, 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost: de oorzaak was de `my`-integratie, niet `external_url`** | **deze ronde** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -469,9 +547,37 @@ Verder: `_TrackUTCTimeChange` (`helpers/event.py:1750`) luistert **zelf niet** o
 daarom zelf op, anders gaat een wekker na een tijdzonewijziging op de oude
 UTC-offset af.
 
-**Openstaand uit 3b:** SPEC 13.4 stap 4 laat twee lezingen toe over `skip_next` bij
-een moment dat buiten het respijtvenster viel. De letterlijke lezing is gebouwd; de
-vraag ligt bij de eigenaar (zie `docs/fase-3b/RAPPORT.md`).
+**Wat er staat na fase 3c:** de server-side laag is **compleet**. Een wekker gaat af
+volgens de acht stappen van SPEC 9.1, met de noodrem ervoor en erna, een volume-oploop
+van 20 stappen, de wake-up light en een stoptimer van 30 minuten. Fase 4 kan de kaart
+bouwen; er is geen server-side werk meer dat de kaart nodig heeft.
+
+**De drie regels van het afvuren die je niet mag omdraaien** (zie
+`docs/fase-3c/RAPPORT.md`):
+
+1. **Volume op 0 gaat vóór het geluid.** Andersom is er één harde uitbarsting op de
+   stand van gisteravond voordat de oploop begint — het verschil tussen wakker worden
+   en wakker schrikken. En het volume wordt **gelezen** vóór het op 0 gaat, anders zet
+   het terugzetten bij het stoppen de speaker op stil.
+2. **Twijfel valt niet altijd dezelfde kant op.** Bij de speakercontrole en bij
+   `radio_mode` betekent twijfel *niet doen*; bij de URI-controle betekent twijfel
+   *wél afgaan* (SPEC 11.2.1). Dat is geen inconsistentie maar dezelfde afweging op
+   andere feiten, en de twee zien er in code op elkaar lijken — daarom staan ze in
+   verschillende modules, met een `Uitkomst`-enum van **drie** waarden in plaats van
+   een `bool`.
+3. **De terugval is de garantie, niet de lijst.** `SIMILAR_TRACKS_PROVIDERS` kan stil
+   verouderen; daarom vangt `afvuren.py` de HTTP 500 van `play_media` op en probeert
+   het opnieuw **zonder** `radio_mode`. Vertrouwen op de lijst zou betekenen dat een
+   MA-wijziging een wekker volkomen stil stukmaakt.
+
+Verder: `async_call_later` en geen `asyncio.sleep` voor de oploop, de tweede
+noodremcontrole en de stoptimer. Dat levert een afzegbare unsub op **en** het loopt op
+HA's klok, dus een test van 20 stappen kost geen 20 seconden.
+
+**Openstaand uit 3b, en in 3c gesloten:** de lezing van SPEC 13.4 stap 4. De eigenaar
+koos de letterlijke lezing — een gemist moment buiten het respijtvenster **verbruikt**
+de overslag — en die verduidelijking staat nu in SPEC 13.4 stap 4 zelf, zodat de
+tweede lezing niet opnieuw opduikt.
 
 **CI:** de eerste run (op de PR van fase 1) was **alle vier groen**, hassfest
 inbegrepen.
@@ -494,10 +600,10 @@ verwerking):
 
 | Punt | Waar | Fase |
 |---|---|---|
-| **De lezing van SPEC 13.4 stap 4:** verbruikt `skip_next` óók op een moment dat buiten het respijtvenster viel en dus nooit afging? De letterlijke lezing is gebouwd. Bij de andere lezing krijgt SPEC 13.4 stap 4 een clausule en verhuist de `skip_next`-controle naar ná de venstertoets | `planner.py` | **beslissing van de eigenaar** |
 | **`music/item_by_uri` als voorkeursroute** zodra MA hem via een gepubliceerde service beschikbaar stelt (SPEC 11.2.2) | `websocket.py` / noodrem | na een MA-release; iemand moet dit volgen |
-| **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. Naast het nalopen bij een MA-release moet de HTTP 500 van `play_media` expliciet afgevangen worden in plaats van op de lijst te vertrouwen | `const.py` / `afvuren.py` | **3c** (fase 3b speelt niets af), plus nalopen bij elke MA-release |
-| **Music Assistant is niet aan 8129 gekoppeld** (fase 0b: Spotify-OAuth komt niet terug, RadioBrowser antwoordt niet). Daardoor keurt `alarms/save` elke speaker terecht af met `not_allowed` en kan een wekker op de dev-instance alleen via `.storage` gezet worden. Fase 3b's livecontrole liep daarop | de dev-instance | **eigenaar**: een provider zonder OAuth koppelen, nodig vóór 3c live te toetsen |
+| **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
+| **De MA-koppeling op 8129 staat klaar maar is niet afgemaakt.** Fase 3c heeft de oorzaak van valkuil 32 weggenomen (`my` eruit) en de flow komt nu tot MA's inlogpagina met een `return_url` naar `http://localhost:8129/auth/external/callback`. Wat er nog moet gebeuren is **inloggen**, en Claude Code typt geen wachtwoorden | de dev-instance | **eigenaar**, in drie stappen: Integratie toevoegen → Music Assistant → URL `http://192.168.1.212:8095` (het LAN-IP, niet `host.docker.internal` — de browser kent die niet), dan inloggen. De flow rondt zelf af |
+| **De livecontrole van fase 3c is niet gedaan** omdat die de koppeling hierboven nodig heeft. Wat er getoetst moet worden staat in `docs/fase-3c/RAPPORT.md` onder "Wat de eigenaar moet toetsen": de acht stappen met tijdstempels, het oplopende volume, en `alarms/stop` die het volume terugzet | de dev-instance | **eigenaar**, na de koppeling |
 | `getCardSize()` ontbreekt; masonry niet gemeten | de kaart | 4 |
 | `panel: true` niet aangeraakt | de kaart | 4 of later |
 

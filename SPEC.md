@@ -1209,6 +1209,22 @@ voor elke wekker die `enabled` is:
    reden dat het bestaat.
 4. Is `skip_next` gezet voor dat moment, dan wordt hij overgeslagen en wordt
    `skip_next` gewist.
+
+   **Dit geldt óók als dat moment buiten het respijtvenster viel** en de wekker dus
+   nooit is afgegaan. De overslag is dan verbruikt. Vastgelegd in fase 3c, omdat
+   fase 3b vaststelde dat deze stap twee lezingen toeliet en de tweede opnieuw zou
+   opduiken.
+
+   De reden: `skip_next` betekent *"de eerstvolgende keer niet"*, en die keer is
+   voorbij — of hij nu gemist werd door een herstart of bewust is overgeslagen. Bij
+   de andere lezing zou een overslag **dagenlang blijven hangen** als Home Assistant
+   een paar keer uit is geweest, en dan gaat de wekker niet af terwijl niemand nog
+   weet waarom. Een overslag die te lang meegaat is erger dan een overslag die één
+   ochtend te vroeg opgaat: de eerste is een stille wekker, de tweede een wekker die
+   afgaat terwijl je hem uit had willen hebben — en dát merk je meteen.
+
+   Gevolg voor de volgorde in de code: de `skip_next`-controle staat **vóór** de
+   venstertoets van stap 5 en 6, niet erna.
 5. Ligt het moment **minder dan 30 minuten** in het verleden, dan **gaat de
    wekker nu af**, met de volledige procedure uit
    [sectie 9.1](#91-de-volgorde) inclusief noodrem.

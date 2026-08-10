@@ -54,6 +54,57 @@ MASS_PLAYER_TYPE_GROUP: Final = "group"
 # automatische stop uit SPEC 9.4: dat die ook 30 is, is toeval.
 RESPIJT_MINUTEN: Final = 30
 
+# --- Afvuren (SPEC 9) ---------------------------------------------------
+# De volume-oploop: 20 stappen van 1 seconde, van 0 naar het ingestelde niveau.
+# SPEC 9.3 legt dit vast als één constante, met opzet: klinkt de oploop trapsgewijs,
+# dan wordt dit getal verhoogd en verandert er niets anders. De techniek laat 100
+# stappen toe — de volumeresolutie is 1 % en een aanroep kost 3–6 ms (gemeten in
+# fase 0b) — dus de bovengrens wordt door het gehoor bepaald, niet door MA.
+OPLOOP_STAPPEN: Final = 20
+OPLOOP_STAP_SECONDEN: Final = 1.0
+
+# De oploop breekt af als het gelezen volume meer dan zoveel procentpunt afwijkt van
+# wat de oploop zelf net zette (SPEC 9.3). Zonder deze regel vecht de integratie met
+# de gebruiker: hij draait zachter, de volgende stap zet het weer harder.
+OPLOOP_AFBREEK_MARGE_PCT: Final = 5
+
+# De tweede noodremcontrole, zoveel seconden ná het starten van het geluid
+# (SPEC 11.3). Lang genoeg dat MA de stream heeft opgezet, kort genoeg dat de klant
+# nog niet is doorgeslapen.
+NOODREM_NA_SECONDEN: Final = 5.0
+
+# De wekker stopt automatisch na zoveel minuten (SPEC 9.4). Bewust een eigen
+# constante en niet dezelfde als RESPIJT_MINUTEN: SPEC 13.4 zegt uitdrukkelijk dat
+# het toeval is dat die ook 30 is.
+STOP_NA_MINUTEN: Final = 30
+
+# Providerdomeinen die `ProviderFeature.SIMILAR_TRACKS` ondersteunen, afgeleid uit
+# MA's broncode (SPEC 8.3.1). Alleen dán wordt `radio_mode` meegestuurd.
+#
+# LET OP — deze lijst kan STIL verouderen. Hij hoort nagelopen te worden bij elke
+# MA-release, en dat staat als openstaand punt in CLAUDE.md. Erop vertrouwen is niet
+# genoeg: `afvuren.py` vangt de HTTP 500 van `play_media` op en probeert het opnieuw
+# zonder `radio_mode`. De lijst is de optimalisatie, de terugval is de garantie.
+#
+# Geen van de gratis radio- en podcastproviders heeft de feature; het zijn de
+# streamingproviders en de mediaservers.
+SIMILAR_TRACKS_PROVIDERS: Final[frozenset[str]] = frozenset(
+    {
+        "spotify",
+        "tidal",
+        "apple_music",
+        "ytmusic",
+        "deezer",
+        "soundcloud",
+        "plex",
+        "jellyfin",
+        "emby",
+        "opensubsonic",
+        "subsonic",
+        "qobuz",
+    }
+)
+
 # --- Standaardwaarden voor een nieuwe wekker (SPEC 14.3) ----------------
 DEFAULT_TIME: Final = "07:00"
 DEFAULT_VOLUME_PCT: Final = 40
