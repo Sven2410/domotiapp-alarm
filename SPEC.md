@@ -834,13 +834,41 @@ wordt of de opgeslagen `uri` **letterlijk** in de treffers voorkomt.
 >   ergste faalgeval van tak B**, want het maakt van een werkende wekker een
 >   stille.
 > - Om dat te beperken gebruikt tak B een ruime `limit` (**50**, het maximum uit
->   [15.6](#156-domotiapp_alarmsoundsearch)) en faalt hij **niet** op een
->   time-out of een fout van de zoekopdracht: kan de controle niet worden
->   uitgevoerd, dan wordt de wekker **wél** gestart. Liever een wekker die
->   misschien niets speelt dan een wekker die zeker niets speelt.
+>   [15.6](#156-domotiapp_alarmsoundsearch)).
+
+#### 11.2.1 Een mislukte controle laat de wekker doorgaan
+
+**Vastgelegd, en dit is een bewuste omkering van de noodremlogica.**
+
+Overal elders in [sectie 11](#11-de-noodrem) geldt: kun je niet vaststellen dat
+het goed gaat, ga dan niet af en meld het. **Hier geldt het omgekeerde.** Kan de
+URI-controle **niet worden uitgevoerd** — de zoekopdracht loopt in de time-out van
+10 seconden, Music Assistant geeft een fout, de provider is wisselvallig zoals
+RadioBrowser in fase 0b — dan wordt de wekker **wél** gestart.
+
+De reden: **een trage zoekopdracht is geen reden om iemand niet te wekken.** Het
+verschil met de andere controles is dat die iets vaststellen over de speaker en
+dus over de kans op geluid; deze stelt iets vast over een hulpaanroep die zelf kan
+falen zonder dat er met het geluid iets aan de hand is. Een controle die de wekker
+tegenhoudt omdat de controle zelf stuk is, is erger dan geen controle.
+
+Het slechtste geval wordt bovendien **achteraf opgevangen**: is de URI werkelijk
+dood, dan levert het afspelen niets op en vangt de controle van
+[11.3](#113-een-paar-seconden-ná-het-starten) dat een paar seconden later alsnog,
+met de melding die daarbij hoort. De klant wordt dan wel niet gewekt, maar hij
+weet 's ochtends waarom — en dat is dezelfde uitkomst als wanneer de controle
+vooraf had geweigerd.
+
+Onderscheid dus scherp, want de twee zien er in code op elkaar lijken:
+
+| Uitkomst van de controle | Wat er gebeurt |
+|---|---|
+| **De URI bestaat niet** (controle gelukt, antwoord negatief) | Wekker gaat **niet** af, melding `sound_gone` |
+| **De controle kon niet worden uitgevoerd** (time-out of fout) | Wekker gaat **wél** af; `DEBUG`-regel dat de controle is overgeslagen |
 
 Fase 3 legt vast welke tak het geworden is en **werkt deze subsectie bij**. Dat is
-een SPEC-correctie waar bij voorbaat om gevraagd is.
+een SPEC-correctie waar bij voorbaat om gevraagd is. Onder tak A geldt
+`11.2.1` onverkort: ook een directe controle kan onbereikbaar zijn.
 
 ### 11.3 Een paar seconden ná het starten
 
@@ -1476,9 +1504,17 @@ filtering in twee talen bestaan.
 
 **Één platte lijst**, niet de acht lijsten van MA. De kaart toont een
 zoekresultaat en niet acht koppen; `media_type` per treffer houdt het onderscheid
-vast. **VOORSTEL** voor de volgorde: afspeellijsten en radio eerst, want dat zijn
-de soorten die bij een wekker passen ([8.3](#83-afspelen)), daarna de rest in de
-volgorde waarin MA ze gaf.
+vast.
+
+**De volgorde: afspeellijsten en radio eerst**, daarna de rest in de volgorde
+waarin MA ze gaf. Vastgelegd.
+
+De reden is wat mensen in de praktijk voor een wekker kiezen, en **niet** dat de
+andere soorten technisch tekort zouden schieten. Die onderbouwing is met opzet
+losgekoppeld van [8.3.1](#831-radio_mode-wordt-in-fase-3-uitgezocht): wat fase 3
+over `radio_mode` vindt, verandert niets aan deze volgorde. Wordt een los nummer
+een even bruikbare wekker, dan blijft het nog steeds zo dat iemand die een wekker
+instelt meestal een afspeellijst of een radiostation wil.
 
 **Time-out: 10 seconden.** Vastgelegd. Duurt de zoekopdracht langer, dan breekt de
 integratie af en geeft `home_assistant_error`, en de editor toont letterlijk:
@@ -1861,13 +1897,21 @@ wordt met een guard gevuld. Zie `CLAUDE.md` valkuil 1 en
 |---|---|
 | `ERROR` | onleesbare opslag, mislukte schrijfactie, een wekker die niet is afgegaan |
 | `WARNING` | lamp kon niet aan; speaker verloor `VOLUME_SET`; oploop moest clampen; twee wekkers op dezelfde speaker |
-| `INFO` | een wekker overgeslagen wegens het respijtvenster ([13.4](#134-het-respijtvenster-30-minuten)) |
-| `DEBUG` | registraties, hashberekening, elke planningsronde, elke opslagronde, welke MA-config-entry gekozen is |
+| `INFO` | een wekker overgeslagen wegens het respijtvenster — `kind: "skipped_grace_window"` ([13.4](#134-het-respijtvenster-30-minuten)) |
+| `DEBUG` | een wekker overgeslagen door de klant zelf (`kind: "skipped_by_user"`); registraties, hashberekening, elke planningsronde, elke opslagronde, welke MA-config-entry gekozen is |
 
-`INFO` staat er voor precies één geval, en dat is met opzet: een overgeslagen
-wekker is een gebeurtenis die de klant raakt zonder dat er iets stuk is. Verder
-geen `INFO` bij normaal gebruik — een integratie die bij elke druk op de knop
-logt, vervuilt de logs van de klant.
+`INFO` staat er voor **precies één geval**, en het onderscheid met `DEBUG` is
+precies waar het om gaat: het respijtvenster is een gebeurtenis waar de klant
+**niets aan kon doen** — Home Assistant stond uit — en dat hoort in een log dat
+een beheerder zonder debugniveau leest. Een wekker die de klant **zelf** heeft
+overgeslagen is verwacht gedrag: dat is exact wat hij vroeg, en dus `DEBUG`.
+
+Beide gevallen leveren wél een mededeling op de kaart op
+([11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt)); het
+logniveau gaat over de beheerder, de mededeling over de klant.
+
+Verder geen `INFO` bij normaal gebruik — een integratie die bij elke druk op de
+knop logt, vervuilt de logs van de klant.
 
 ---
 

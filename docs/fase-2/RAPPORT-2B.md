@@ -90,8 +90,9 @@ object.
 ## Wat niet lukte
 
 **Twee tegenstrijdigheden gevonden, niet stil opgelost.** De opdracht vroeg die te
-melden in plaats van ze zelf recht te trekken, dus ze staan nog ongewijzigd in
-`SPEC.md`:
+melden in plaats van ze zelf recht te trekken. Ze zijn hieronder beschreven zoals
+ik ze aantrof; **de eigenaar heeft ze daarna allebei beslist en ze zijn verwerkt**
+— zie het [addendum](#addendum--de-twee-tegenstrijdigheden-beslist).
 
 1. **Sectie 15.6 motiveert de sorteervolgorde met iets dat kan vervallen.**
    Daar staat als VOORSTEL: *"afspeellijsten en radio eerst, want dat zijn de
@@ -151,6 +152,62 @@ Verder:
 
 Geen andere aannames gedaan; al het overige is een letterlijke verwerking van de
 tien beslissingen.
+
+---
+
+## Addendum — de twee tegenstrijdigheden beslist
+
+De eigenaar heeft de twee gemelde tegenstrijdigheden beslist en aanname 4
+bevestigd. Alle drie zijn in dezelfde branch verwerkt.
+
+**1. SPEC 15.6 — de sorteervolgorde blijft, de motivering verandert.**
+Afspeellijsten en radio staan nog steeds eerst, maar de reden is nu **wat mensen in
+de praktijk voor een wekker kiezen**, niet dat de andere soorten technisch
+tekortschieten. De verwijzing naar 8.3 als onderbouwing is weg, en er staat
+expliciet bij dat de regel geldig blijft ongeacht wat fase 3 over `radio_mode`
+vindt. Daarmee is de VOORSTEL-markering vervallen: dit is nu vastgelegd.
+
+**2. SPEC 19.5 — het onderscheid tussen de twee overslagen.**
+`skipped_grace_window` blijft **`INFO`**: de klant kon er niets aan doen, Home
+Assistant stond uit, en dat hoort in een log dat een beheerder zonder debugniveau
+leest. `skipped_by_user` wordt **`DEBUG`**: dat is precies wat de klant vroeg. De
+zin over "precies één geval" klopt daarmee weer en noemt het onderscheid nu zelf.
+Er staat één regel bij die de twee lagen scheidt: **het logniveau gaat over de
+beheerder, de mededeling op de kaart over de klant** — beide gevallen leveren wél
+een mededeling op.
+
+**3. SPEC 11.2.1 nieuw — de omkering van de noodremlogica staat er nu expliciet.**
+Aanname 4 is akkoord en ongewijzigd gebleven, maar hij was impliciet: hij stond als
+één bijzin in een blockquote. Nu is het een eigen subsectie die zegt **dat** het
+een bewuste omkering is en **waarom**:
+
+- overal elders in sectie 11 geldt "kun je niet vaststellen dat het goed gaat, ga
+  dan niet af"; hier geldt het omgekeerde;
+- een trage zoekopdracht is geen reden om iemand niet te wekken;
+- het verschil is dat de andere controles iets vaststellen over de **speaker**, en
+  dus over de kans op geluid, terwijl deze iets vaststelt over een **hulpaanroep
+  die zelf kan falen** zonder dat er met het geluid iets aan de hand is;
+- het slechtste geval wordt achteraf opgevangen door de tweede
+  `available`-controle uit 11.3, met de melding die daarbij hoort.
+
+Er staat een tabel bij die de twee uitkomsten scheidt, omdat ze in code op elkaar
+lijken: **"de URI bestaat niet"** (controle gelukt, antwoord negatief) houdt de
+wekker tegen; **"de controle kon niet worden uitgevoerd"** (time-out of fout) niet.
+En de subsectie geldt óók onder tak A, want een directe controle kan net zo goed
+onbereikbaar zijn.
+
+**Consistentiecontrole opnieuw gedraaid** na deze drie wijzigingen:
+
+| Controle | Uitkomst |
+|---|---|
+| Interne ankerlinks | **133 links, 0 kapot, 0 dubbele koppen** |
+| Inhoudsopgave vs secties | 20 op 20, labels en ankers kloppen |
+| Verwijzingen naar OPEN VRAAG of sectie 21 | **0** |
+| JSON-blokken | 3 van 5 parseren; 2 illustratief, onveranderd |
+| VOORSTEL | 31 → **30** (15.6 is nu vastgelegd) |
+
+`SPEC.md` staat nu op **1991 regels**. Er zijn geen openstaande
+tegenstrijdigheden meer.
 
 ---
 
