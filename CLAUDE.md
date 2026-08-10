@@ -425,7 +425,8 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 0b | Music Assistant live geverifieerd (`docs/fase-0b/RAPPORT.md`): `playback_state` bewijst niets, groepsvolume werkt relatief, volumeresolutie is 1 %. HA↔MA-koppeling niet gelukt | gemerged |
 | 1 | Rooktest: buildketen (lit + esbuild), CI met vier jobs, de integratie serveert en registreert haar eigen kaart langs beide routes, 8 JS- en 10 Python-tests, verificatie op de dev-instance én op een verse instance | gemerged |
 | 2 | `SPEC.md` als bron van waarheid: 20 secties met opslagschema, negen WebSocket-commando's, foutgedrag, wat niet in v1 zit, en tien open vragen | in PR #4 |
-| **2b** | **De tien open vragen gesloten en sectie 21 verwijderd. `last_failure` hernoemd naar `last_message` met een `severity`, zodat een overgeslagen wekker als mededeling getoond wordt. `radio_mode` en de URI-controle doorgeschoven naar fase 3, met beide takken uitgeschreven** | **deze ronde** |
+| 2b | De tien open vragen gesloten en sectie 21 verwijderd. `last_failure` hernoemd naar `last_message` met een `severity`. `radio_mode` en de URI-controle doorgeschoven naar fase 3, met beide takken uitgeschreven | gemerged |
+| **3a** | **De server-side laag zonder klok: `store.py` met de kapotte-data-scheiding, `validatie.py` en `volgende.py` (beide puur), `entiteiten.py` met de labelfiltering, en de negen WebSocket-commando's. 112 Python-tests, 13 mutaties nagelopen** | **deze ronde** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -436,16 +437,29 @@ een kaart die één regel tekst rendert. Versie `0.1.0`, bundel 16.713 bytes.
 meer. Wat er nog niet gebouwd is: wekkerlogica, opslag, WebSocket-commando's,
 editor, planning, Music Assistant.
 
+**Wat er staat na fase 3a:** de volledige server-side laag **zonder klok**. Opslag
+met validatie en het foutgedrag uit SPEC 19.2, de labelfiltering, en de negen
+WebSocket-commando's. `volgende.py` bevat de rekenkunde voor "wanneer gaat deze
+wekker af" en is **puur** — fase 3b hergebruikt hem in plaats van hem opnieuw te
+schrijven.
+
 **CI:** de eerste run (op de PR van fase 1) was **alle vier groen**, hassfest
 inbegrepen.
 
-**Wat fase 3 als eerste moet uitzoeken**, uit `SPEC.md`:
+**De twee vragen die fase 3a moest uitzoeken, beantwoord** (zie
+`docs/fase-3a/RAPPORT.md`):
 
-- **`radio_mode`** — werkt het, dan is een los nummer een bruikbare wekker en
-  vervalt de waarschuwing (SPEC 8.3.1, beide takken uitgeschreven).
-- **De URI-controle** — is er een directe manier om te zien of een URI nog
-  bestaat? Zo niet, dan is zoeken op naam de terugval, en die is niet waterdicht
-  (SPEC 11.2, beide takken uitgeschreven).
+- **`radio_mode`: tak B.** Het parameter is volledig doorverbonden, maar de
+  MA-server gooit `UnsupportedFeaturedException: No Music Provider found that
+  supports requesting similar tracks` — HTTP 500, en er speelt **niets**. Alleen
+  streamingproviders hebben `SIMILAR_TRACKS`. De waarschuwing uit SPEC 8.3 blijft
+  dus staan.
+- **De URI-controle: er is een directe route, maar niet via HA.**
+  `music/item_by_uri` werkt op elke schemaversie en onderscheidt
+  `MediaNotFoundError` van `ProviderUnavailableError` — precies de twee uitkomsten
+  van SPEC 11.2.1. Maar **geen enkele HA-service stelt hem beschikbaar**; ervoor is
+  `entry.runtime_data.mass` van de MA-integratie nodig. Dat is een beslissing voor
+  de eigenaar en blokkeert 3a niet, want de noodrem is fase 3b.
 
 **Open punten uit fase 1:** `getCardSize()` ontbreekt en masonry-weergave is niet
 gemeten (alleen sections), en `panel: true` is niet aangeraakt — dat laatste staat

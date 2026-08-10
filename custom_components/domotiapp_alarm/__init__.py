@@ -29,7 +29,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
-from . import resource
+from . import resource, websocket
 from .const import (
     CARD_FILENAME,
     CARD_URL_PATH,
@@ -37,9 +37,11 @@ from .const import (
     DATA_JS_URL,
     DATA_RESOURCE_ID,
     DATA_STATIC_PATH_REGISTERED,
+    DATA_STORE,
     DOMAIN,
     HASH_LENGTE,
 )
+from .store import AlarmStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,6 +99,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # meer. Deze aanroep gooit nooit.
     data[DATA_RESOURCE_ID] = await resource.async_zorg_voor_resource(hass, js_url)
 
+    # Opslaglaag: één instantie voor alle config entries. Laden gooit nooit; wat er
+    # mis is wordt gemarkeerd (SPEC 19.2).
+    if DATA_STORE not in data:
+        store = AlarmStore(hass)
+        await store.async_load()
+        data[DATA_STORE] = store
+
+    websocket.async_register(hass)
+
     data[DATA_ENTRY_COUNT] = data.get(DATA_ENTRY_COUNT, 0) + 1
 
     return True
@@ -107,12 +118,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     Het statische pad blijft staan: aiohttp kent geen unregister voor routes.
     De vlag blijft daarom ook staan, zodat een herinstallatie binnen dezelfde
-    HA-run niet opnieuw registreert.
+    HA-run niet opnieuw registreert. Hetzelfde geldt voor de
+    WebSocket-commando's: HA kent geen `async_unregister_command`.
 
     **De Lovelace-resource blijft hier ook staan.** Unload draait óók bij elke
     reload — de handeling die na iedere rebuild nodig is — en de resource zou
     dan bij elke herstart van de integratie verdwijnen en terugkomen. Weghalen
     gebeurt in `async_remove_entry`.
+
+    De opslaglaag verdwijnt hier wél. Zonder dat blijven de commando's na het
+    verwijderen van de integratie lezen én schrijven naar de Store van een
+    integratie die er niet meer is.
     """
     data = hass.data.get(DOMAIN, {})
     data[DATA_ENTRY_COUNT] = max(0, data.get(DATA_ENTRY_COUNT, 0) - 1)
@@ -121,6 +137,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if js_url := data.pop(DATA_JS_URL, None):
             remove_extra_js_url(hass, js_url)
             _LOGGER.debug("Kaart afgemeld bij de frontend: %s", js_url)
+
+        if data.pop(DATA_STORE, None) is not None:
+            _LOGGER.debug("Opslaglaag losgelaten")
 
     return True
 
