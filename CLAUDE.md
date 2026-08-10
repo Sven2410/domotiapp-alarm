@@ -423,24 +423,36 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 |---|---|---|
 | 0 | Repo-opzet, testinstance op 8129, en architectuurverificatie van vier onbekenden: `docs/fase-0/ONDERZOEK.md` | gemerged |
 | 0b | Music Assistant live geverifieerd (`docs/fase-0b/RAPPORT.md`): `playback_state` bewijst niets, groepsvolume werkt relatief, volumeresolutie is 1 %. HA↔MA-koppeling niet gelukt | gemerged |
-| **1** | **Rooktest: buildketen (lit + esbuild), CI met vier jobs, de integratie serveert en registreert haar eigen kaart langs beide routes, 8 JS- en 10 Python-tests, verificatie op de dev-instance én op een verse instance** | **deze ronde** |
+| 1 | Rooktest: buildketen (lit + esbuild), CI met vier jobs, de integratie serveert en registreert haar eigen kaart langs beide routes, 8 JS- en 10 Python-tests, verificatie op de dev-instance én op een verse instance | gemerged |
+| 2 | `SPEC.md` als bron van waarheid: 20 secties met opslagschema, negen WebSocket-commando's, foutgedrag, wat niet in v1 zit, en tien open vragen | in PR #4 |
+| **2b** | **De tien open vragen gesloten en sectie 21 verwijderd. `last_failure` hernoemd naar `last_message` met een `severity`, zodat een overgeslagen wekker als mededeling getoond wordt. `radio_mode` en de URI-controle doorgeschoven naar fase 3, met beide takken uitgeschreven** | **deze ronde** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
 routes registreert (index-import én Lovelace-resource), een lege config flow, en
 een kaart die één regel tekst rendert. Versie `0.1.0`, bundel 16.713 bytes.
 
-**Wat er nog niet is:** wekkerlogica, opslag, WebSocket-commando's, editor,
-planning, Music Assistant. En `SPEC.md` — die komt in fase 2 en is daarna
-bindend.
+**Wat er staat na fase 2b:** `SPEC.md` is **bindend** en heeft geen open vragen
+meer. Wat er nog niet gebouwd is: wekkerlogica, opslag, WebSocket-commando's,
+editor, planning, Music Assistant.
 
 **CI:** de eerste run (op de PR van fase 1) was **alle vier groen**, hassfest
 inbegrepen.
 
+**Wat fase 3 als eerste moet uitzoeken**, uit `SPEC.md`:
+
+- **`radio_mode`** — werkt het, dan is een los nummer een bruikbare wekker en
+  vervalt de waarschuwing (SPEC 8.3.1, beide takken uitgeschreven).
+- **De URI-controle** — is er een directe manier om te zien of een URI nog
+  bestaat? Zo niet, dan is zoeken op naam de terugval, en die is niet waterdicht
+  (SPEC 11.2, beide takken uitgeschreven).
+
 **Open punten uit fase 1:** `getCardSize()` ontbreekt en masonry-weergave is niet
 gemeten (alleen sections), en `panel: true` is niet aangeraakt — dat laatste staat
 in DomotiApp Scene als openstaand punt (`frontend#52570`) en raakt juist
-kiosk-opstellingen.
+kiosk-opstellingen. Voor de stoptoestand is dat inmiddels een vastgelegde
+beperking (SPEC 20.1, punt 2): de kaart hoort op een eigen Lovelace-dashboard in
+sections-weergave, niet op een ingebouwd paneel.
 
 ---
 
