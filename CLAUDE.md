@@ -434,9 +434,13 @@ een kaart die één regel tekst rendert. Versie `0.1.0`, bundel 16.713 bytes.
 planning, Music Assistant. En `SPEC.md` — die komt in fase 2 en is daarna
 bindend.
 
-**Open punten uit fase 1:** CI is nog nooit gedraaid (de eerste run is die van de
-PR van fase 1), hassfest is alleen in CI te beoordelen, `getCardSize()` ontbreekt
-en masonry-weergave is niet gemeten, en `panel: true` is niet aangeraakt.
+**CI:** de eerste run (op de PR van fase 1) was **alle vier groen**, hassfest
+inbegrepen.
+
+**Open punten uit fase 1:** `getCardSize()` ontbreekt en masonry-weergave is niet
+gemeten (alleen sections), en `panel: true` is niet aangeraakt — dat laatste staat
+in DomotiApp Scene als openstaand punt (`frontend#52570`) en raakt juist
+kiosk-opstellingen.
 
 ---
 

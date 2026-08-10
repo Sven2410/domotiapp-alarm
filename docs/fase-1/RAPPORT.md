@@ -102,11 +102,21 @@ op de werkmap (valkuil 15).
 De bundeljob heeft een `if: failure()`-stap die `npm run build` draait en de diff
 toont, zodat een mislukking meteen leesbaar is.
 
-**Niet in CI gedraaid.** De workflow is nog nooit uitgevoerd — er is niets
-gepusht vóór deze PR. Dat de jobs slagen is dus **niet aangetoond**; wat wel
-aangetoond is, is dat de vier commando's die ze draaien lokaal slagen, en dat de
-Python-tests in een Linux-container slagen op dezelfde HA-versie. De eerste
-CI-run gebeurt op deze PR.
+**Eerste CI-run: alle vier groen.** De workflow was bij het schrijven van dit
+rapport nog nooit uitgevoerd; de run op de PR van deze fase is de eerste. Uitkomst
+(run `31399948524`):
+
+```
+success  Bundel komt overeen met de bron
+success  Manifest volgens Home Assistant     (hassfest)
+success  JavaScript-tests
+success  Python-tests
+```
+
+De stap "Toon het verschil bij een mislukking" is overgeslagen, zoals hoort bij
+een geslaagde run. **hassfest keurt het manifest, de vertalingen en de config flow
+goed** — dat was lokaal niet vast te stellen (valkuil 15) en is hiermee wél
+beantwoord.
 
 ---
 
@@ -481,35 +491,24 @@ compose-projecten over: domotiapp-alarm-dev, domotiapp-alarm-ma
 
 ## Wat niet lukte
 
-1. **CI is nog nooit gedraaid.** De workflow bestaat, maar er is niets gepusht
-   vóór deze PR, dus dat de vier jobs slagen is **niet aangetoond**. Lokaal
-   slagen alle commando's die ze draaien, en de Python-tests slagen in een
-   Linux-container op HA 2026.8.1. De eerste echte run is die van deze PR; blijkt
-   daar iets uit, dan hoort dat in dezelfde PR gerepareerd te worden.
-
-2. **hassfest is niet lokaal gedraaid.** Dat kan ook niet zinnig: op de werkmap
-   loopt hij `.venv/` in en keurt HA's eigen integraties af (valkuil 15). Of het
-   manifest, de vertalingen en de config flow zijn goedgekeurd, blijkt pas uit de
-   CI-job.
-
-3. **Eén mutatietest legde een gat in mijn eigen tests bloot.** Zie taak F. Het
+1. **Eén mutatietest legde een gat in mijn eigen tests bloot.** Zie taak F. Het
    is gedicht, maar het is wel het tweede rapport op rij waarin een meting van
    mij eerst het verkeerde antwoord gaf. In fase 0b was dat naieve
    fold-rekenkunde en een dubbel geformatteerd logrecord; hier een testopzet die
    de valkuil wegnam die hij moest vangen. De les die zich opdringt: **een test
    die slaagt is pas bewijs als hij ook aantoonbaar kan falen.**
 
-4. **De kaartkiezer is niet met het muiswiel gescrold.** `scrollIntoView` was
+2. **De kaartkiezer is niet met het muiswiel gescrold.** `scrollIntoView` was
    programmatisch; de klik die de dialoog opende was echt en `isTrusted` is
    getoond. Dit is een beperking van de meetopstelling (valkuil 11), geen
    waargenomen gedrag van de dialoog.
 
-5. **Geen `getCardSize()` op de kaart.** In masonry-weergaven gebruikt Lovelace
+3. **Geen `getCardSize()` op de kaart.** In masonry-weergaven gebruikt Lovelace
    die voor de kolomverdeling. De kaart is alleen in **sections**-weergave
    geverifieerd, zoals gevraagd. Masonry is niet gemeten en `getCardSize`
    ontbreekt; dat hoort erbij zodra de kaart een echte hoogte krijgt.
 
-6. **Panelweergave (`panel: true`) is niet gemeten.** Dat staat in DomotiApp
+4. **Panelweergave (`panel: true`) is niet gemeten.** Dat staat in DomotiApp
    Scene als openstaand punt (`frontend#52570`) en is hier ook niet aangeraakt.
    Kiosk-opstellingen gebruiken vaak juist `panel: true`.
 
