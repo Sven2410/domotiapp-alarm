@@ -413,6 +413,35 @@ Vindplaatsen in `docs/fase-3c/RAPPORT.md`.
     onschadelijk** gemaakt worden — hier door de oploop eerst één stap te laten
     zetten, zodat het gelezen volume gelijk is aan wat de oploop zelf zette.
 
+37. **Een vastgehouden `hass` leest een BEVROREN states-snapshot.** HA's frontend
+    **vervangt** `hass.states` bij elke statuswijziging in plaats van het te muteren,
+    dus `const hass = ...` aan het begin van een script en daarna `hass.states[x]`
+    lezen levert de stand van vóór je handeling op. In fase 3c leverde dat een
+    "mislukte" toets op die niets mankeerde: `alarms/stop` had het volume netjes op 0,55
+    teruggezet en de meting zei 0,40. **Haal `document.querySelector('home-assistant').hass`
+    opnieuw op na elke handeling die de state verandert**, of lees de waarde uit het
+    server-side log.
+
+38. **Meet de cadans van een tijdgestuurde lus aan de ONTVANGENDE kant.** Fase 3c mat de
+    volume-oploop in twee onafhankelijke logs: HA's `call_service`-regels én het log van
+    de snapclient in de MA-container (`ServerSettings … volume: 2/4/6…`). Beide gaven
+    1,004–1,007 s per stap. Eén bron zou niet hebben uitgesloten dat HA netjes plant en
+    de speaker het samenvoegt. Dit is het antwoord op valkuil 31: niet in de browser
+    meten, en niet op totaalduur.
+
+39. **`sound/search` geeft meer velden terug dan `alarms/save` accepteert.** Een
+    zoekresultaat draagt `album` en `artists`; het `sound`-object in de opslag mag
+    alleen `uri`, `name`, `media_type` en `image` (SPEC 8.2). Letterlijk doorgeven geeft
+    `invalid_format — onbekende velden: ['album', 'artists']`. De kaart moet het
+    resultaat dus uitkleden vóór het opslaan.
+
+40. **De weergavenaam van een MA-item is niet altijd een zoekterm.** `somafm://` geeft
+    `"SomaFM: Beat Blender"` terug, en zoeken op die string in MA levert **nul**
+    treffers; `"Beat Blender"` levert er drie. Providerspecifiek: `radiobrowser://` en
+    iTunes-podcasts zijn zelf-vindbaar, SomaFM niet. Dat maakt de zoekroute uit SPEC
+    11.2 voor die provider zelf-verslaand — zie de openstaande beslissing in de tabel
+    hieronder, en `docs/fase-3c/RAPPORT.md`.
+
 36. **Positieve controles vangen de mutaties die een functie volledig
     uitschakelen.** Een test die alleen op falen let, komt door een implementatie
     die *altijd* faalt. In fase 3c wordt een groot deel van de 39 mutaties gevangen
@@ -505,7 +534,7 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 2b | De tien open vragen gesloten en sectie 21 verwijderd. `last_failure` hernoemd naar `last_message` met een `severity`. `radio_mode` en de URI-controle doorgeschoven naar fase 3, met beide takken uitgeschreven | gemerged |
 | 3a | De server-side laag zonder klok: `store.py` met de kapotte-data-scheiding, `validatie.py` en `volgende.py` (beide puur), `entiteiten.py` met de labelfiltering, en de negen WebSocket-commando's. 112 Python-tests, 13 mutaties nagelopen | gemerged |
 | 3b | De planner: `planner.py` (plannen, inhaalslag, respijtvenster, herplannen), `afvuren.py` als naad met 3c, `meldingen.py` met de drie kanalen en de repair issues die 3a openliet. 137 Python-tests, 17 mutaties nagelopen, live gemeten afwijking 12 ms | gemerged |
-| **3c** | **Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py` (available + URI-controle met de omkering van 11.2.1), `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 213 Python-tests, 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost: de oorzaak was de `my`-integratie, niet `external_url`** | **deze ronde** |
+| **3c** | **Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py` (available + URI-controle met de omkering van 11.2.1), `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 213 Python-tests, 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost (oorzaak: de `my`-integratie, niet `external_url`) en de livecontrole live gedaan: **+2,153 s afwijking, oploop 1,006 s per stap, audio bewezen aan de speakerkant. En één blokkerende bevinding: de URI-controle van SPEC 11.2 houdt een werkende SomaFM-wekker tegen** | **deze ronde** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -574,6 +603,26 @@ Verder: `async_call_later` en geen `asyncio.sleep` voor de oploop, de tweede
 noodremcontrole en de stoptimer. Dat levert een afzegbare unsub op **en** het loopt op
 HA's klok, dus een test van 20 stappen kost geen 20 seconden.
 
+**Wat de livecontrole van 3c live heeft aangetoond** (`docs/fase-3c/RAPPORT.md`):
+
+- de acht stappen in de voorgeschreven volgorde, met `volume_set` naar 0 op **+17 ms**
+  en `play_media` op **+22 ms** — volume nul komt aantoonbaar vóór het geluid;
+- de oploop `[0, 2, 4, … 40]` met **1,004–1,007 s** per stap, in twee onafhankelijke
+  logs (HA én de snapclient in de MA-container);
+- er kwam **werkelijk geluid** uit: 0 van 97 s `No chunks available` tijdens de wekker,
+  63/63 s en 74/74 s stilte ervoor en erna;
+- `alarms/stop` zet het volume terug (0,40 → 0,55), ná `media_stop`, 8 ms ertussen;
+- een onbereikbare speaker levert **nul** service-aanroepen op, met melding, event én
+  de wake-up light aan (SPEC 11.6 punt 2);
+- valkuil 18 live bevestigd: op `unavailable` blijven precies `device_class`, `icon`,
+  `friendly_name`, `supported_features` en `entity_picture` over — dus filteren op
+  `supported_features` is de juiste keuze, en `alarms/save` accepteert de speaker nog.
+
+**De totale afwijking is +2,153 s**, en dat is **niet** de noodrem: de URI-controle kost
+**5 ms**. 2,131 s van de 2,153 zit in `music_assistant.play_media`, die blokkeert tot MA
+de stream heeft opgezet. Gevolg: de oploop begint op +3,1 s en is klaar op +22,3 s. Bij
+een langzamere provider loopt dat verder uit.
+
 **Openstaand uit 3b, en in 3c gesloten:** de lezing van SPEC 13.4 stap 4. De eigenaar
 koos de letterlijke lezing — een gemist moment buiten het respijtvenster **verbruikt**
 de overslag — en die verduidelijking staat nu in SPEC 13.4 stap 4 zelf, zodat de
@@ -602,8 +651,7 @@ verwerking):
 |---|---|---|
 | **`music/item_by_uri` als voorkeursroute** zodra MA hem via een gepubliceerde service beschikbaar stelt (SPEC 11.2.2) | `websocket.py` / noodrem | na een MA-release; iemand moet dit volgen |
 | **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
-| **De MA-koppeling op 8129 staat klaar maar is niet afgemaakt.** Fase 3c heeft de oorzaak van valkuil 32 weggenomen (`my` eruit) en de flow komt nu tot MA's inlogpagina met een `return_url` naar `http://localhost:8129/auth/external/callback`. Wat er nog moet gebeuren is **inloggen**, en Claude Code typt geen wachtwoorden | de dev-instance | **eigenaar**, in drie stappen: Integratie toevoegen → Music Assistant → URL `http://192.168.1.212:8095` (het LAN-IP, niet `host.docker.internal` — de browser kent die niet), dan inloggen. De flow rondt zelf af |
-| **De livecontrole van fase 3c is niet gedaan** omdat die de koppeling hierboven nodig heeft. Wat er getoetst moet worden staat in `docs/fase-3c/RAPPORT.md` onder "Wat de eigenaar moet toetsen": de acht stappen met tijdstempels, het oplopende volume, en `alarms/stop` die het volume terugzet | de dev-instance | **eigenaar**, na de koppeling |
+| **BLOKKEREND — de URI-controle van SPEC 11.2 maakt van een werkende SomaFM-wekker een stille.** Gemeten in fase 3c: de opgeslagen naam `"SomaFM: Beat Blender"` geeft **0** treffers in MA's eigen zoekopdracht, `"Beat Blender"` geeft er 3. De controle concludeert "geluid bestaat niet meer" en de wekker gaat niet af. Providerspecifiek: `radiobrowser://` en podcasts zijn zelf-vindbaar, `somafm://` niet. Code en SPEC zijn **niet** gewijzigd — de implementatie doet wat SPEC voorschrijft, het defect zit in het ontwerp. Drie richtingen staan in het rapport; `music/item_by_uri` (SPEC 11.2.2) is de kandidaat, en deze bevinding verzwaart die afweging | `noodrem.py` / SPEC 11.2 | **beslissing van de eigenaar, vóór een klant** |
 | `getCardSize()` ontbreekt; masonry niet gemeten | de kaart | 4 |
 | `panel: true` niet aangeraakt | de kaart | 4 of later |
 
