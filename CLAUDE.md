@@ -156,9 +156,15 @@ vindplaats wordt zo'n lijst binnen twee maanden folklore.
    uit de cache** (`cache.match`, buiten de service worker om) en navigeer
    daarna meteen.
 
-5. **De browsertool schrijft geen screenshotbestanden weg.** Vijf rondes op rij
-   in DomotiApp Scene. Reken daarop: het bewijs is een DOM-uitlezing, een lijst
-   service-aanroepen, een bytegrootte of een gemeten positie in pixels.
+5. **~~De browsertool schrijft geen screenshotbestanden weg.~~ ACHTERHAALD in
+   fase 1.** In DomotiApp Scene lukte dat vijf rondes op rij niet; met
+   `save_to_disk: true` schrijft de tool het bestand nu wél weg en geeft hij het
+   pad terug. Twee screenshots van fase 1 staan in `docs/fase-1/RAPPORT.md`
+   genoemd.
+   **Wat blijft gelden:** een screenshot is zwakker bewijs dan een meting. "33 px
+   overloop, de tegels schoven van 208 naar 241" is controleerbaar, "het ziet er
+   scheef uit" niet. Gebruik plaatjes ter illustratie, en DOM-uitlezingen,
+   bytegroottes en gemeten posities als bewijs.
 
 6. **`docker exec` met `/`-paden vanuit Git Bash** vereist `MSYS_NO_PATHCONV=1`,
    anders mangelt Git Bash het pad naar `C:/Program Files/...`. In fase 0 ook
@@ -211,9 +217,8 @@ vindplaats wordt zo'n lijst binnen twee maanden folklore.
     `npm install`.** Zonder de eerste zet `core.autocrlf` op Windows de bundel
     om naar CRLF terwijl esbuild LF schrijft, en faalt de bytevergelijking
     zonder dat er iets mis is. Zonder de tweede kan de esbuild-versie afwijken.
-    **Staat er in dit project nog niet in** — bij de eerste commit gaf git al
-    "LF will be replaced by CRLF" op vier bestanden. Regelen in fase 1, vóór er
-    een bundel in de repo staat.
+    **Sinds fase 1 geregeld**: `.gitattributes` staat in de repo en CI gebruikt
+    `npm ci`.
 
 ### Nieuw in fase 0, uit de broncode van 2026.8.1
 
@@ -341,15 +346,40 @@ Vindplaatsen in `docs/fase-0b/RAPPORT.md`.
 
 ---
 
+## Commando's
+
+```bash
+npm install                # eenmalig
+npm run build              # bundelt src/ -> custom_components/.../frontend/
+npm run verify             # faalt als de gecommitte bundel afwijkt van de bron
+npm run check:registratie  # bewaakt de registratieregel (valkuil 1)
+npm test                   # JS-unittests (node --test), geen jsdom
+```
+
+**Python-tests draaien niet op Windows** — Home Assistant importeert `fcntl`.
+Draai ze in Linux:
+
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm -v "C:/dev/domotiapp-alarm:/app" -w /app \
+  python:3.14-slim sh -c "pip install -q -r requirements-test.txt && python -m pytest -q"
+```
+
+CI draait vier jobs: bundelvergelijking + registratieregel, hassfest op het
+manifest, JS-tests, Python-tests.
+
+**Na elke `npm run build` de config entry herladen**, daarna pas hard herladen in
+de browser. De `?v=` is de bundelhash en die wordt bij setup berekend (valkuil 2).
+
+---
+
 ## Releaseprocedure
 
-Nog niet van toepassing: er is nog geen manifest, geen bundel en geen CI. Wat er
-uit DomotiApp Scene overgenomen moet worden zodra die er zijn — het is daar drie
-keer bijna misgegaan en één keer echt:
+Nog geen release gemaakt; de eerste versie is `0.1.0`. De procedure staat er al
+omdat hij in DomotiApp Scene drie keer bijna misging en één keer echt.
 
-Het versienummer uit `manifest.json` hoort in de bundel geïnjecteerd te worden.
-Een versieverhoging verandert dan de bytes van de bundel, ook als er in `src/`
-niets is gewijzigd. In DomotiApp Scene is bij 1.0.1 de versie opgehoogd zonder
+Het versienummer uit `manifest.json` wordt in de bundel geïnjecteerd
+(`scripts/build.mjs`, `define: __CARD_VERSION__`). Een versieverhoging verandert
+dus de bytes van de bundel, ook als er in `src/` niets is gewijzigd. In DomotiApp Scene is bij 1.0.1 de versie opgehoogd zonder
 opnieuw te bouwen; de CI-job "Bundel komt overeen met de bron" ving dat, `main`
 stond rood en er moest een 1.0.2 aan te pas komen.
 
@@ -384,6 +414,33 @@ Drie dingen die hierin niet mogen wegvallen:
 
 `gh run watch` staat er niet voor de netheid: het is het moment om te zien dat
 CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
+
+---
+
+## Projectstand
+
+| Fase | Wat het opleverde | Status |
+|---|---|---|
+| 0 | Repo-opzet, testinstance op 8129, en architectuurverificatie van vier onbekenden: `docs/fase-0/ONDERZOEK.md` | gemerged |
+| 0b | Music Assistant live geverifieerd (`docs/fase-0b/RAPPORT.md`): `playback_state` bewijst niets, groepsvolume werkt relatief, volumeresolutie is 1 %. HA↔MA-koppeling niet gelukt | gemerged |
+| **1** | **Rooktest: buildketen (lit + esbuild), CI met vier jobs, de integratie serveert en registreert haar eigen kaart langs beide routes, 8 JS- en 10 Python-tests, verificatie op de dev-instance én op een verse instance** | **deze ronde** |
+
+**Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
+`/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
+routes registreert (index-import én Lovelace-resource), een lege config flow, en
+een kaart die één regel tekst rendert. Versie `0.1.0`, bundel 16.713 bytes.
+
+**Wat er nog niet is:** wekkerlogica, opslag, WebSocket-commando's, editor,
+planning, Music Assistant. En `SPEC.md` — die komt in fase 2 en is daarna
+bindend.
+
+**CI:** de eerste run (op de PR van fase 1) was **alle vier groen**, hassfest
+inbegrepen.
+
+**Open punten uit fase 1:** `getCardSize()` ontbreekt en masonry-weergave is niet
+gemeten (alleen sections), en `panel: true` is niet aangeraakt — dat laatste staat
+in DomotiApp Scene als openstaand punt (`frontend#52570`) en raakt juist
+kiosk-opstellingen.
 
 ---
 

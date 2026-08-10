@@ -1,0 +1,6 @@
+{
+  "name": "DomotiApp Alarm",
+  "render_readme": true,
+  "homeassistant": "2026.8",
+  "hide_default_branch": true
+}

@@ -1,0 +1,9 @@
+# De gecommitte bundel wordt in CI byte-voor-byte vergeleken met een verse
+# build. Zonder deze regel zet core.autocrlf op Windows het bestand in de
+# werkmap om naar CRLF, terwijl esbuild LF schrijft — dan faalt de
+# vergelijking op Windows zonder dat er iets mis is.
+* text=auto eol=lf
+
+*.jpg binary
+*.png binary
+*.gif binary

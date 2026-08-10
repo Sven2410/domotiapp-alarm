@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  bundel:
+    name: Bundel komt overeen met de bron
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.18.1"
+          cache: npm
+
+      # npm ci gebruikt uitsluitend package-lock.json, dus elke run haalt
+      # dezelfde esbuild- en lit-versie op als lokaal. Met npm install zou de
+      # bytevergelijking op een andere esbuild-versie kunnen stuklopen.
+      - run: npm ci
+
+      # Bouwt in geheugen en vergelijkt byte-voor-byte met het gecommitte
+      # bestand. Faalt met beide groottes en beide sha256's.
+      #
+      # Dit is de job die vangt dat een versieverhoging zonder rebuild is
+      # gecommit: het versienummer wordt in de bundel geïnjecteerd, dus dan
+      # wijken de bytes af. In DomotiApp Scene kostte precies die vergissing
+      # een extra release.
+      - name: Vergelijk gecommitte bundel met verse build
+        run: npm run verify
+
+      # Bewaakt dat de kaart wacht op HA's custom-element-registry. Zonder die
+      # wachtlus landt de registratie in de native registry en is de kaart
+      # onzichtbaar voor Home Assistant — zonder fout en zonder log.
+      - name: Registratieregel
+        run: npm run check:registratie
+
+      - name: Toon het verschil bij een mislukking
+        if: failure()
+        run: |
+          npm run build
+          git --no-pager diff --stat -- custom_components/domotiapp_alarm/frontend/
+
+  manifest:
+    name: Manifest volgens Home Assistant
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # hassfest is de validator die Home Assistant zelf op elke integratie
+      # draait: hij keurt manifest.json, de vertalingen en de config flow.
+      # Zonder deze stap merken we een ongeldige iot_class of een kapotte
+      # vertaling pas als een klant hem installeert.
+      #
+      # Bewust op een schone uitcheck en niet op de werkmap: lokaal loopt
+      # hassfest .venv/ in en keurt daar HA's eigen integraties af omdat die
+      # geen version in hun manifest hebben (CLAUDE.md, valkuil 15).
+      - uses: home-assistant/actions/hassfest@master
+
+  js-tests:
+    name: JavaScript-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24.18.1"
+          cache: npm
+
+      - run: npm ci
+
+      # Alleen pure logica, met de ingebouwde testrunner van Node. Geen jsdom:
+      # die stubt HA-componenten en beoordeelt de CSS-cascade niet, dus zou over
+      # de kaart zelf niets kunnen bewijzen.
+      - run: npm test
+
+  python-tests:
+    name: Python-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-test.txt
+
+      - run: pip install -r requirements-test.txt
+
+      # Draaien niet op Windows: Home Assistant importeert fcntl. Lokaal gaat
+      # dit via een Linux-container; zie CLAUDE.md, Commando's.
+      - run: python -m pytest -q
