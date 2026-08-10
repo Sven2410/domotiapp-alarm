@@ -29,12 +29,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
-from . import resource, websocket
+from . import meldingen, planner as planner_mod, resource, websocket
 from .const import (
     CARD_FILENAME,
     CARD_URL_PATH,
     DATA_ENTRY_COUNT,
     DATA_JS_URL,
+    DATA_PLANNER,
     DATA_RESOURCE_ID,
     DATA_STATIC_PATH_REGISTERED,
     DATA_STORE,
@@ -108,6 +109,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     websocket.async_register(hass)
 
+    # Reparatiemeldingen voor onleesbare opslag (SPEC 19.2 geval B regel 4 en geval C
+    # regel 3). Idempotent: issues die er niet meer horen te zijn worden opgeruimd.
+    meldingen.async_werk_reparatiemeldingen_bij(hass, data[DATA_STORE])
+
+    # De planner. Ná de frontend-registratie, zodat een inhaalslag het laden van de
+    # kaart niet ophoudt. Doet bij het starten eerst de inhaalslag uit SPEC 13.4 en
+    # plant daarna vooruit.
+    if DATA_PLANNER not in data:
+        planner = planner_mod.Planner(hass)
+        data[DATA_PLANNER] = planner
+        await planner.async_start()
+
     data[DATA_ENTRY_COUNT] = data.get(DATA_ENTRY_COUNT, 0) + 1
 
     return True
@@ -134,6 +147,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data[DATA_ENTRY_COUNT] = max(0, data.get(DATA_ENTRY_COUNT, 0) - 1)
 
     if data[DATA_ENTRY_COUNT] == 0:
+        # Eerst de planner: een listener die na het loslaten van de opslag nog vuurt,
+        # zou op een Store lezen die er niet meer is (SPEC 13.5, unload).
+        if (planner := data.pop(DATA_PLANNER, None)) is not None:
+            planner.async_stop()
+            _LOGGER.debug("Planner gestopt en listeners opgezegd")
+
         if js_url := data.pop(DATA_JS_URL, None):
             remove_extra_js_url(hass, js_url)
             _LOGGER.debug("Kaart afgemeld bij de frontend: %s", js_url)

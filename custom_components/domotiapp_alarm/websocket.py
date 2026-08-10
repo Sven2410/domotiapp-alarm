@@ -24,7 +24,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
-from . import entiteiten, ringing
+from . import afvuren, entiteiten, planner, ringing
 from .const import (
     DATA_STORE,
     DATA_WS_REGISTERED,
@@ -226,6 +226,7 @@ async def _handle_save(hass, connection, msg) -> None:
         gevalideerd["one_shot_at"] = moment.isoformat()
 
     await store.async_zet_wekker(registry_id, gevalideerd)
+    await planner.async_herplan(hass)
     connection.send_result(msg["id"], _toestand(hass, msg["person"]))
 
 
@@ -252,6 +253,7 @@ async def _handle_set_enabled(hass, connection, msg) -> None:
     bijgewerkt = await _store(hass).async_werk_velden_bij(registry_id, msg["alarm_id"], velden)
     if bijgewerkt is None:
         raise PersonNietGevonden(f"wekker {msg['alarm_id']} bestaat niet bij {msg['person']}")
+    await planner.async_herplan(hass)
     connection.send_result(msg["id"], _toestand(hass, msg["person"]))
 
 
@@ -275,19 +277,13 @@ async def _handle_delete(hass, connection, msg) -> None:
     # blijft er geluid draaien voor een wekker die niet meer bestaat. Het
     # daadwerkelijke stoppen — geluid, oploop, volume terugzetten — zit in fase 3b;
     # hier verdwijnt hij uit het register en gaat het bericht eruit.
-    if register.is_afgaand(registry_id, msg["alarm_id"]):
-        register.actief.pop((registry_id, msg["alarm_id"]), None)
-        register.stuur(
-            {
-                "event": ringing.EVENT_STOPPED,
-                "person": msg["person"],
-                "alarm_id": msg["alarm_id"],
-                "reason": ringing.REASON_DELETED,
-            }
-        )
+    await afvuren.async_stop_afgaan(
+        hass, registry_id, msg["person"], msg["alarm_id"], ringing.REASON_DELETED
+    )
 
     if not await _store(hass).async_verwijder_wekker(registry_id, msg["alarm_id"]):
         raise PersonNietGevonden(f"wekker {msg['alarm_id']} bestaat niet bij {msg['person']}")
+    await planner.async_herplan(hass)
     connection.send_result(msg["id"], _toestand(hass, msg["person"]))
 
 
@@ -311,6 +307,7 @@ async def _handle_skip_next(hass, connection, msg) -> None:
     )
     if bijgewerkt is None:
         raise PersonNietGevonden(f"wekker {msg['alarm_id']} bestaat niet bij {msg['person']}")
+    await planner.async_herplan(hass)
     connection.send_result(msg["id"], _toestand(hass, msg["person"]))
 
 
@@ -447,17 +444,9 @@ async def _handle_stop(hass, connection, msg) -> None:
     verdwijnt de wekker uit het register en gaat het bericht naar de abonnees.
     """
     registry_id = registry_id_van_person(hass, msg["person"])
-    register = ringing.register_van(hass)
-    if register.is_afgaand(registry_id, msg["alarm_id"]):
-        register.actief.pop((registry_id, msg["alarm_id"]), None)
-        register.stuur(
-            {
-                "event": ringing.EVENT_STOPPED,
-                "person": msg["person"],
-                "alarm_id": msg["alarm_id"],
-                "reason": ringing.REASON_USER,
-            }
-        )
+    await afvuren.async_stop_afgaan(
+        hass, registry_id, msg["person"], msg["alarm_id"], ringing.REASON_USER
+    )
     connection.send_result(msg["id"], _toestand(hass, msg["person"]))
 
 

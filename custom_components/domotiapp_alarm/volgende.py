@@ -151,6 +151,46 @@ def volgende_momenten(
     return gevonden
 
 
+def laatste_verstreken_moment(
+    nu: dt.datetime, tijd: str, dagen: list[int] | tuple[int, ...]
+) -> dt.datetime | None:
+    """Het meest recente moment **in het verleden** dat aan tijd én dagen voldoet.
+
+    Dit is stap 1 van het respijtvenster (SPEC 13.4). `None` betekent: deze wekker is
+    nog nooit langsgekomen binnen het zoekvenster, dus er valt niets in te halen.
+
+    Zelfde regels als vooruit kijken: een wandkloktijd die niet bestaat wordt
+    **overgeslagen**, want de planner heeft hem die dag ook niet laten afgaan.
+
+    Bij een dubbel voorkomend uur (najaar) geeft deze functie het **tweede** van de
+    twee — het meest recente. Dat is bedoeld: staat `last_fired` op het eerste, dan
+    is het tweede nog niet gehad en hoort het te worden ingehaald, precies zoals
+    SPEC 13.1 twee keer vuren voorschrijft.
+    """
+    if nu.tzinfo is None:
+        raise ValueError("nu moet een tijdzone hebben")
+    uur, minuut = parse_tijd(tijd)
+    tz = nu.tzinfo
+    toegestaan = set(dagen) if dagen else set(range(1, 8))
+
+    for verschuiving in range(_MAX_DAGEN_VOORUIT + 1):
+        datum = (nu - dt.timedelta(days=verschuiving)).date()
+        if datum.isoweekday() not in toegestaan:
+            continue
+        # Beide folds langslopen, laatste eerst: bij een dubbel uur is het tweede
+        # moment het meest recente.
+        for fold in (1, 0):
+            moment = dt.datetime(
+                datum.year, datum.month, datum.day, uur, minuut, 0, 0, tzinfo=tz
+            ).replace(fold=fold)
+            if not bestaat(moment):
+                continue
+            if moment >= nu:
+                continue
+            return moment
+    return None
+
+
 def tekst_voor(moment: dt.datetime, nu: dt.datetime) -> str:
     """De regel onderaan de kaart (SPEC 3.3)."""
     klok = f"{moment.hour:02d}:{moment.minute:02d}"
