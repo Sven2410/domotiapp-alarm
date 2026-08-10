@@ -1,5 +1,11 @@
 # Fase 2 — SPEC.md
 
+> **Dit is het verslag van de eerste ronde en op twee punten achterhaald.** De
+> tien open vragen uit sectie 21 zijn inmiddels beantwoord en sectie 21 bestaat
+> niet meer; `last_failure` heet nu `last_message`. Zie
+> **[`RAPPORT-2B.md`](RAPPORT-2B.md)** voor de tweede ronde. Dit bestand blijft
+> ongewijzigd als verslag van wat er in ronde 1 is gebeurd.
+
 Doel: één bestand, `SPEC.md` in de wortel van de repo, als bron van waarheid voor
 alle volgende fasen.
 

@@ -13,8 +13,6 @@ eigenaar expliciet om een SPEC-correctie vraagt.
 - **VOORSTEL** — niet vastgelegd door de eigenaar; door mij ingevuld om het
   document uitvoerbaar te maken. Mag zonder discussie omgegooid worden.
 - **GEMETEN** — volgt uit fase 0, 0b of 1, met vindplaats.
-- **OPEN VRAAG** — staat in [sectie 21](#21-open-vragen) en is niet zelf
-  ingevuld.
 
 ---
 
@@ -40,7 +38,6 @@ eigenaar expliciet om een SPEC-correctie vraagt.
 18. [Entiteiten die verdwijnen of veranderen](#18-entiteiten-die-verdwijnen-of-veranderen)
 19. [Foutgedrag](#19-foutgedrag)
 20. [Wat NIET in v1 zit](#20-wat-niet-in-v1-zit)
-21. [Open vragen](#21-open-vragen)
 
 ---
 
@@ -565,13 +562,38 @@ is dan onbruikbaar. Daarom:
 - faalt hij, dan is de melding **"Het gekozen geluid bestaat niet meer"** met de
   opgeslagen naam erin, en niet een kale URI.
 
-**Voor welke soorten dit werkt** is deels **niet getoetst**. Fase 0b kon radio en
-podcast aantoonbaar zoeken en radio aantoonbaar afspelen; album, artiest en los
-nummer waren op de testinstance niet te toetsen omdat er geen streamingprovider
-was. De toetslijst daarvoor staat in `docs/fase-0b/RAPPORT.md` onder "Wat de
-eigenaar moet toetsen" (T3). **Dit document gaat ervan uit dat alle zeven soorten
-werken**; blijkt dat niet zo, dan is dat een SPEC-correctie en geen
-implementatiedetail.
+### 8.2.1 Welke soorten getoetst zijn
+
+| Soort | Status | Waar gemeten |
+|---|---|---|
+| `radio` | **zoeken én afspelen aangetoond** | fase 0b, SomaFM: `Beat Blender` → treffer, afgespeeld met echte FLAC-stream |
+| `podcast` | **zoeken aangetoond** | fase 0b, iTunes Podcast Search; afspelen niet getoetst |
+| `playlist` | zoeken via de bibliotheek aangetoond | fase 0b, `library://playlist/…` |
+| `artist` | **zoeken aangetoond** | eigenaar, aug 2026 |
+| `track` | **zoeken aangetoond** | eigenaar, aug 2026 |
+| `album` | **zoeken aangetoond** | eigenaar, aug 2026 |
+| `audiobook` | **niet getoetst** | geen provider die ze levert |
+
+**GEMETEN door de eigenaar, augustus 2026**, op zijn eigen Home Assistant met een
+gekoppelde Spotify-provider, via `music_assistant.search`. Deze getallen staan
+niet in een faserapport; ze zijn hier vastgelegd zodat ze naspeurbaar zijn:
+
+| Aanroep | Uitkomst |
+|---|---|
+| `media_type: [artist]`, `name: "Coldplay"` | **5 treffers**, elk met `name`, `uri`, `image` |
+| `media_type: [track]`, `name: "Coldplay"` | **5 treffers**, elk met `name`, `uri`, `image`, plus genest `album` en `artists` inclusief afbeelding |
+| `media_type: [album]`, `name: "Ghost Stories"` | **3 treffers**, elk met `name`, `uri`, `image`, plus genest `artists` |
+
+Daarmee is de belofte van [sectie 8.1](#81-zoeken-via-music-assistant) — naam,
+soort en afbeelding per treffer, en bij een nummer ook artiest en album — voor
+zes van de zeven soorten gemeten in plaats van aangenomen. `audiobook` blijft
+ongetoetst; er was geen provider die ze levert.
+
+**Wat dezelfde meting óók liet zien, en wat elders doorwerkt:** bij
+`"Ghost Stories"` kwamen **twee albums met dezelfde naam van verschillende
+artiesten** terug. Een naam identificeert een item dus **niet** uniek. Dat is de
+reden dat de URI-controle in
+[sectie 11.2](#112-de-uri-wordt-vooraf-gecontroleerd) niet op naam mag leunen.
 
 ### 8.3 Afspelen
 
@@ -580,16 +602,37 @@ opgeslagen `uri`.
 
 **Radio en afspeellijst zijn de soorten die bij een wekker passen**, want die
 hebben een onbepaalde duur. Een los nummer van drie minuten stopt van zichzelf en
-dan is de wekker stil terwijl niemand wakker is. De editor **waarschuwt** bij een
-soort met een eindige duur (`track`, `podcast`, `audiobook`):
+dan is de wekker stil terwijl niemand wakker is.
+
+#### 8.3.1 `radio_mode` wordt in fase 3 uitgezocht
+
+`music_assistant.play_media` heeft een veld **`radio_mode`**
+(`components/music_assistant/services.yaml:48-50`). Werkt dat, dan speelt MA na
+het gekozen item eindeloos door in dezelfde stijl, en is een los nummer wél een
+bruikbare wekker.
+
+**Fase 3 stelt vast of dat werkt**, door `radio_mode: true` mee te sturen bij een
+`track` en te meten of er na het einde van het nummer nog geluid is. Twee
+uitkomsten, beide hier vastgelegd zodat fase 3 niet hoeft te improviseren:
+
+**Tak A — `radio_mode` werkt.** Dan stuurt de integratie `radio_mode: true` mee
+bij elk geluid met een eindige duur (`track`, `podcast`, `audiobook`), en
+**vervalt de waarschuwing hieronder**. De editor zegt dan niets bijzonders over
+de soort; alle soorten zijn gelijkwaardig. De wekker stopt dan alleen door de
+gebruiker of door de 30-minutentimer
+([9.4](#94-de-wekker-stopt-na-30-minuten)).
+
+**Tak B — `radio_mode` werkt niet, of niet betrouwbaar.** Dan blijft de
+waarschuwing staan en wordt hij bindend: de editor **waarschuwt** bij `track`,
+`podcast` en `audiobook`, niet blokkerend:
 
 > **Dit geluid stopt van zichzelf.** Een los nummer is na een paar minuten
 > voorbij; daarna is het stil. Kies een afspeellijst of een radiostation als de
 > wekker moet blijven spelen tot je hem uitzet.
 
-**VOORSTEL**, niet blokkerend. Alternatief was `radio_mode: true` meesturen zodat
-MA eindeloos doorspeelt in dezelfde stijl; dat is niet getoetst en staat als
-[OPEN VRAAG](#21-open-vragen).
+Fase 3 legt de uitkomst vast in het faserapport en **werkt deze subsectie bij**
+naar de tak die het geworden is — dat is een SPEC-correctie waar bij voorbaat om
+gevraagd is, dus melden en doorgaan is hier voldoende.
 
 ---
 
@@ -634,19 +677,28 @@ boolean op `play_index`/`resume` (`music_assistant_client/player_queues.py:101,
 herhaalde `media_player.volume_set`.
 
 Dat dat werkt is gemeten: 20 aanroepen van elk 3–6 ms, totaal 20,004 s,
-eindvolume exact. De volumeresolutie is **1 %** over de hele schaal, en op echte
-hardware exact gehonoreerd — de eigenaar heeft dat op een Sonos bevestigd
-(`0.31` → `0.31`).
+eindvolume exact.
+
+De volumeresolutie is **1 %** over de hele schaal. **GEMETEN door de eigenaar,
+augustus 2026**, op een Sonos, en exact gehonoreerd: `0.31` → `0.31`,
+`0.32` → `0.32`, `0.33` → `0.33`. Andere merken zijn niet getoetst; dat is een
+aanvaard risico en staat als beperking in
+[sectie 20.1](#201-bekende-beperkingen).
 
 **De oploop gaat PER SPEAKER**, nooit op een groep. Zie
 [sectie 7.3](#73-groepen-worden-uitgesloten).
 
-**Aantal stappen: VOORSTEL 20, één per seconde.** Dat is niet gemeten als
-"vloeiend": fase 0b kon de cadans niet halen doordat Chrome `setTimeout` in een
-achtergrondtabblad afknijpt, en er zat geen oor bij de speaker. Hoeveel stappen
-vloeiend aanvoelt is een [OPEN VRAAG](#21-open-vragen); de techniek staat 100
-stappen toe en de aanroepkosten zijn verwaarloosbaar, dus de bovengrens wordt
-door het gehoor bepaald en niet door MA.
+**Aantal stappen: 20, één per seconde.** Vastgelegd.
+
+Dit is **niet gemeten als "vloeiend"** en dat blijft zo: fase 0b kon de cadans
+niet halen doordat Chrome `setTimeout` in een achtergrondtabblad afknijpt, en er
+zat geen oor bij de speaker.
+
+**Het is één constante in de implementatie**, en dat is met opzet: klinkt de
+oploop trapsgewijs, dan wordt die constante verhoogd en verandert er niets anders.
+De techniek laat **100 stappen** toe — de volumeresolutie is 1 % en de
+aanroepkosten zijn 3–6 ms per stap — dus de bovengrens wordt door het gehoor
+bepaald en niet door Music Assistant.
 
 **Buiten bereik wordt stil afgekapt.** Gemeten: `-5` → 0, `150` → 100, `33.7` →
 33 (afkappen, niet afronden), alles met HTTP 200. Een rekenfout in de oploop
@@ -745,14 +797,50 @@ een URI die `://` bevat direct geaccepteerd
 (`components/music_assistant/media_player.py:494-498`). Een verouderde URI faalt
 daardoor stil.
 
-De integratie controleert dus zelf dat het opgeslagen geluid nog bestaat.
-**VOORSTEL** voor hoe: een `music_assistant.search` op de opgeslagen `name`,
-beperkt tot het opgeslagen `media_type`, en kijken of de opgeslagen `uri` in de
-treffers zit. Zit hij er niet in, dan is de wekker niet uitvoerbaar.
+De integratie controleert dus zelf dat het opgeslagen geluid nog bestaat. **Hoe
+dat gebeurt, wordt in fase 3 uitgezocht.**
 
-Dit is een voorstel en geen zekerheid: het is denkbaar dat MA een directere
-controle heeft die fase 0b niet heeft gevonden. Staat als
-[OPEN VRAAG](#21-open-vragen).
+**Fase 3 zoekt eerst naar een directe controle.** In de
+`music_assistant_client`-bibliotheek staat het volledige commando-oppervlak van de
+MA-server; fase 3 gaat daar na of er een aanroep is die van één URI zegt of hij
+nog bestaat — bijvoorbeeld een `get_item`-achtige aanroep op URI, of
+`verify_item_uri` dat op een nieuwere schemaversie wél bestaat. De testinstance
+draaide schema 31; een klant kan een nieuwere server hebben, dus de controle mag
+**per schemaversie verschillen** zolang het gedrag hetzelfde is.
+
+**Tak A — er is een directe controle.** Die wordt gebruikt. Eén aanroep, één
+antwoord, geen naamvergelijking.
+
+**Tak B — er is niets beters.** Dan is de terugval een `music_assistant.search`
+op de opgeslagen `name`, beperkt tot het opgeslagen `media_type`, waarbij gekeken
+wordt of de opgeslagen `uri` **letterlijk** in de treffers voorkomt.
+
+> **Tak B is niet waterdicht, en dat moet in de code staan.** De meting uit
+> [8.2.1](#821-welke-soorten-getoetst-zijn) laat zien waarom: op
+> `"Ghost Stories"` kwamen **twee albums met dezelfde naam van verschillende
+> artiesten** terug. Een naam identificeert een item dus niet uniek.
+>
+> Concrete gevolgen van tak B, die als bekende beperking gelden:
+>
+> - **Vals positief:** staat er een gelijknamig item in de bibliotheek waarvan de
+>   URI wél bestaat, dan kan de controle "geldig" zeggen over een URI die dood
+>   is — als de vergelijking op naam in plaats van op URI zou gebeuren. Daarom is
+>   de vergelijking **op de URI-string** en niet op de naam; de naam dient alleen
+>   om de zoekopdracht te richten.
+> - **Vals negatief:** is het item er nog maar geeft de zoekopdracht het niet
+>   terug — een andere sorteervolgorde, een `limit` die te laag is, een
+>   wisselvallige provider zoals RadioBrowser in fase 0b — dan meldt de controle
+>   onterecht dat het geluid weg is en gaat de wekker niet af. **Dat is het
+>   ergste faalgeval van tak B**, want het maakt van een werkende wekker een
+>   stille.
+> - Om dat te beperken gebruikt tak B een ruime `limit` (**50**, het maximum uit
+>   [15.6](#156-domotiapp_alarmsoundsearch)) en faalt hij **niet** op een
+>   time-out of een fout van de zoekopdracht: kan de controle niet worden
+>   uitgevoerd, dan wordt de wekker **wél** gestart. Liever een wekker die
+>   misschien niets speelt dan een wekker die zeker niets speelt.
+
+Fase 3 legt vast welke tak het geworden is en **werkt deze subsectie bij**. Dat is
+een SPEC-correctie waar bij voorbaat om gevraagd is.
 
 ### 11.3 Een paar seconden ná het starten
 
@@ -809,25 +897,51 @@ Faalt een van de controles, dan:
 
 ### 11.7 Waar de melding verschijnt en hoe de klant hem wegkrijgt
 
-**VOORSTEL**, twee kanalen, en beide zijn nodig omdat ze verschillende mensen
-bereiken:
+**VOORSTEL** voor de twee kanalen, en beide zijn nodig omdat ze verschillende
+mensen bereiken.
 
-**a) Op de kaart.** De rij van de betreffende wekker krijgt een melding met de
-reden, in foutkleur, met een **"Begrepen"**-knop die hem wegneemt. De kaart is
-waar de klant 's ochtends kijkt.
+**Er zijn twee soorten meldingen**, en ze zien er verschillend uit. Dat verschil
+is vastgelegd, niet cosmetisch: een fout vraagt een handeling, een mededeling
+niet.
 
-Voorbeeldteksten:
+| Soort | `severity` | Toon | Kleur |
+|---|---|---|---|
+| **Fout** — de wekker is niet afgegaan door een storing | `"error"` | *"is niet afgegaan"*, met wat de klant eraan kan doen | foutkleur (`--error-color`) |
+| **Mededeling** — de wekker is niet afgegaan door iets normaals | `"notice"` | *"is niet afgegaan omdat…"*, feitelijk, zonder oproep tot actie | `--secondary-text-color`, met een informatie-icoon |
 
-| Oorzaak | Tekst op de kaart |
+**a) Op de kaart.** De rij van de betreffende wekker krijgt de melding, met een
+**"Begrepen"**-knop die hem wegneemt. De kaart is waar de klant 's ochtends kijkt.
+
+Teksten bij `severity: "error"`:
+
+| `kind` | Tekst op de kaart |
 |---|---|
-| Speaker `unavailable` | **"De wekker van 06:45 is niet afgegaan: de speaker 'Slaapkamer' was niet bereikbaar."** |
-| Music Assistant weg | **"De wekker van 06:45 is niet afgegaan: Music Assistant was niet bereikbaar."** |
-| URI ongeldig | **"De wekker van 06:45 is niet afgegaan: het gekozen geluid 'Beat Blender' bestaat niet meer. Kies een nieuw geluid."** |
-| Speaker viel weg ná het starten | **"De wekker van 06:45 is mogelijk niet hoorbaar geweest: de speaker 'Slaapkamer' viel weg tijdens het spelen."** |
+| `speaker_unavailable` | **"De wekker van 06:45 is niet afgegaan: de speaker 'Slaapkamer' was niet bereikbaar."** |
+| `ma_unavailable` | **"De wekker van 06:45 is niet afgegaan: Music Assistant was niet bereikbaar."** |
+| `sound_gone` | **"De wekker van 06:45 is niet afgegaan: het gekozen geluid 'Beat Blender' bestaat niet meer. Kies een nieuw geluid."** |
+| `speaker_lost_during_play` | **"De wekker van 06:45 is mogelijk niet hoorbaar geweest: de speaker 'Slaapkamer' viel weg tijdens het spelen."** |
+| `light_failed` | **"De wekker is afgegaan, maar de lamp 'Bedlamp' kon niet aangezet worden."** |
+| `volume_ramp_unavailable` | **"De wekker is afgegaan op het ingestelde volume; het oplopende volume was op deze speaker niet mogelijk."** |
+
+Teksten bij `severity: "notice"`:
+
+| `kind` | Tekst op de kaart |
+|---|---|
+| `skipped_grace_window` | **"Je wekker van 06:45 is niet afgegaan omdat Home Assistant uit stond."** |
+| `skipped_by_user` | **"De wekker van 06:45 is overgeslagen, zoals je had ingesteld."** |
+
+De eerste is de tekst die de eigenaar heeft vastgelegd, en de reden dat deze hele
+categorie bestaat: dat is precies wat iemand wil weten die zich heeft
+verslapen. Het is geen storing en het moet er ook niet als een storing uitzien.
 
 **b) Een `persistent_notification`.** Die verschijnt in HA's eigen meldingenlijst
 en overleeft dat niemand de kaart opent. De klant krijgt hem weg met HA's eigen
 kruisje.
+
+**VOORSTEL:** alleen bij `severity: "error"`. Een mededeling op de kaart is
+genoeg; een `persistent_notification` bij elke overgeslagen wekker zou de
+meldingenlijst vullen met dingen waar niets aan te doen is, en dan leest niemand
+hem meer.
 
 Waarom geen repair issue: repair issues zijn admin-only
 (`components/repairs`), en de klant is geen admin
@@ -836,7 +950,7 @@ persoon die zich verslaapt niet.
 
 **De melding wordt vastgelegd in de opslag**, per wekker, zodat hij een herstart
 overleeft en de kaart hem kan tonen ook als de browser pas uren later opengaat.
-Zie het veld `last_failure` in [sectie 14.2](#142-het-schema).
+Zie het veld `last_message` in [sectie 14.2](#142-het-schema).
 
 ---
 
@@ -941,14 +1055,25 @@ voor elke wekker die `enabled` is:
 5. Ligt het moment **minder dan 30 minuten** in het verleden, dan **gaat de
    wekker nu af**, met de volledige procedure uit
    [sectie 9.1](#91-de-volgorde) inclusief noodrem.
-6. Ligt het er langer in het verleden, dan wordt hij **overgeslagen** en wordt
-   dat gelogd op `INFO` — dit is een van de weinige plekken waar `INFO` gepast
-   is, want het is een gebeurtenis die de klant raakt.
+6. Ligt het er langer in het verleden, dan wordt hij **overgeslagen**, wordt dat
+   gelogd op `INFO`, én wordt er een **mededeling aan de klant** vastgelegd — zie
+   hieronder.
 7. Daarna wordt normaal vooruit gepland.
 
-**VOORSTEL:** een overgeslagen wekker levert **geen** foutmelding op de kaart op.
-Hij is niet mislukt; hij was te laat. Wel een regel in het log. Of de klant dit
-wil zien is een [OPEN VRAAG](#21-open-vragen).
+**Een overgeslagen wekker wordt aan de klant getoond.** Vastgelegd. `last_message`
+krijgt `kind: "skipped_grace_window"` en `severity: "notice"`, met de tekst:
+
+> **"Je wekker van 06:45 is niet afgegaan omdat Home Assistant uit stond."**
+
+Dat is precies wat iemand wil weten die zich heeft verslapen, en het is de reden
+dat de categorie "mededeling" bestaat naast "fout"
+([11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt)). Het is
+**geen** storing en het ziet er ook niet als een storing uit: andere kleur, andere
+formulering, en géén `persistent_notification`.
+
+Voor een wekker die door `skip_next` is overgeslagen (stap 4) geldt hetzelfde
+mechanisme met `kind: "skipped_by_user"` — óók een mededeling, want de klant heeft
+het zelf ingesteld en hoeft er niets aan te doen.
 
 **Waarom 30 minuten en niet korter of langer** is de keuze van de eigenaar en
 staat hier alleen vastgelegd. Het getal is hetzelfde als de automatische stop uit
@@ -1008,7 +1133,7 @@ Per wekker:
 | `volume_pct` | int 1–100 | ja | het niveau waar de oploop op eindigt |
 | `light` | object of `null` | ja | `{ "entity_id", "brightness_pct" }`, of `null` |
 | `last_fired` | string of `null` | ja | ISO-8601 met tijdzone; het laatste moment waarop deze wekker daadwerkelijk is afgegaan. Draagt de inhaalslag uit [13.4](#134-het-respijtvenster-30-minuten) |
-| `last_failure` | object of `null` | ja | de melding uit [11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt): `{ "at", "reason", "text" }`, of `null` als er niets te melden is |
+| `last_message` | object of `null` | ja | de melding uit [11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt): `{ "at", "kind", "severity", "text" }`, of `null` als er niets te melden is. Zie [14.2.1](#1421-één-veld-voor-fouten-én-mededelingen) |
 
 **Keuzes hierin die VOORSTEL zijn:** ISO-weekdagen 1–7 in plaats van namen of
 0–6 (taalonafhankelijk en gelijk aan `datetime.isoweekday()`); `volume_pct` als
@@ -1019,6 +1144,38 @@ een afbeelding kan tonen zonder opnieuw te zoeken.
 
 `volume_pct` ondergrens is **1** en niet 0: een wekker op volume 0 is geen
 wekker.
+
+#### 14.2.1 Één veld voor fouten én mededelingen
+
+Een overgeslagen wekker moet aan de klant getoond worden
+([11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt)), en dat is
+geen fout. Er waren twee manieren om dat in het schema te zetten: het bestaande
+foutveld hergebruiken, of een tweede veld toevoegen.
+
+**Gekozen: één veld, `last_message`, met een `severity`.** Het oorspronkelijk
+voorgestelde `last_failure` is daarmee **hernoemd** — de naam zou liegen zodra er
+mededelingen in staan.
+
+De afweging:
+
+- **Eén veld** betekent één code­pad, één "Begrepen"-knop, één plek in het schema,
+  en één regel voor de kaart: *toon `last_message` als hij er is, en kies kleur en
+  toon op `severity`.*
+- **Twee velden** (`last_failure` plus `last_notice`) zou de vraag oproepen wat er
+  gebeurt als ze **beide** gevuld zijn — welke laat de kaart dan zien, en in welke
+  kleur? Dat is een toestand die niets toevoegt: de kaart heeft één regel per
+  wekker en toont daar de meest recente gebeurtenis.
+
+De prijs van één veld is expliciet: **een nieuwe melding overschrijft de vorige.**
+Is een wekker gisteren mislukt en vandaag overgeslagen, dan ziet de klant alleen
+het overslaan. Dat is aanvaard — de klant wil weten wat er vanochtend gebeurde,
+niet een logboek. Wie de geschiedenis wil, kijkt in het log
+([19.5](#195-logniveaus)).
+
+`kind` is de machineleesbare reden en is bedoeld om op te vergelijken; `text` is
+de Nederlandse tekst die de kaart toont. De tekst staat in de opslag en wordt niet
+in de kaart samengesteld, zodat een melding die op een herstart moet overleven
+niet afhangt van de versie van de kaart die hem leest.
 
 ### 14.3 Standaardwaarden
 
@@ -1072,7 +1229,7 @@ weekendwekker **zonder**, en een **eenmalige** wekker zonder herhaaldagen.
               "brightness_pct": 60
             },
             "last_fired": "2026-08-10T06:45:00.312000+02:00",
-            "last_failure": null
+            "last_message": null
           },
           {
             "id": "7c2b5d81e6a94f0ab3d8c7e2d1a5b9d4",
@@ -1092,7 +1249,7 @@ weekendwekker **zonder**, en een **eenmalige** wekker zonder herhaaldagen.
             "volume_pct": 25,
             "light": null,
             "last_fired": "2026-08-09T09:00:00.208000+02:00",
-            "last_failure": null
+            "last_message": null
           },
           {
             "id": "f0e3a7c15b2d48e9a6c4b8d1e7f2a903",
@@ -1112,9 +1269,10 @@ weekendwekker **zonder**, en een **eenmalige** wekker zonder herhaaldagen.
             "volume_pct": 55,
             "light": null,
             "last_fired": null,
-            "last_failure": {
+            "last_message": {
               "at": "2026-08-05T05:20:00.191000+02:00",
-              "reason": "speaker_unavailable",
+              "kind": "speaker_unavailable",
+              "severity": "error",
               "text": "De wekker van 05:20 is niet afgegaan: de speaker 'Slaapkamer' was niet bereikbaar."
             }
           }
@@ -1130,8 +1288,8 @@ zelf; alles onder `data` is van ons.
 
 ### 14.5 Wat er met een afgegane eenmalige wekker gebeurt
 
-**VOORSTEL:** na afgaan wordt `enabled` op `false` gezet en blijft de wekker in
-de lijst staan, met `last_fired` gevuld. Hij wordt **niet** verwijderd.
+Na afgaan wordt `enabled` op `false` gezet en blijft de wekker in de lijst staan,
+met `last_fired` gevuld. Hij wordt **niet** verwijderd. Vastgelegd.
 
 Reden: de gebruiker ziet dan dat hij is afgegaan en kan hem opnieuw aanzetten
 zonder alles opnieuw in te vullen. Automatisch verwijderen is een onomkeerbare
@@ -1233,7 +1391,7 @@ optioneel `id`. **Ontbreekt `id`, dan is het een nieuwe wekker** en genereert de
 server er een.
 
 De server beheert zelf en accepteert **niet** van de kaart: `skip_next`,
-`one_shot_at`, `last_fired`, `last_failure`. Die worden bij een update
+`one_shot_at`, `last_fired`, `last_message`. Die worden bij een update
 overgenomen uit de bestaande wekker. Reden: het zijn geen gebruikerskeuzes maar
 boekhouding, en een kaart die ze mag zetten kan de inhaalslag uit
 [13.4](#134-het-respijtvenster-30-minuten) om de tuin leiden.
@@ -1322,12 +1480,22 @@ vast. **VOORSTEL** voor de volgorde: afspeellijsten en radio eerst, want dat zij
 de soorten die bij een wekker passen ([8.3](#83-afspelen)), daarna de rest in de
 volgorde waarin MA ze gaf.
 
+**Time-out: 10 seconden.** Vastgelegd. Duurt de zoekopdracht langer, dan breekt de
+integratie af en geeft `home_assistant_error`, en de editor toont letterlijk:
+
+> **"Zoeken duurt te lang. Probeer het opnieuw."**
+
+Waarom er een time-out moet zijn: MA's eigen zoekopdracht ging in fase 0b in
+tientallen milliseconden, maar RadioBrowser was **wisselvallig** en gaf
+minutenlang fouten op elke zoekopdracht op één na. Een editor die dan blijft
+wachten, lijkt stuk.
+
 **Fouten**
 
 | Code | Wanneer |
 |---|---|
 | `not_found` | er is geen geladen `music_assistant`-config-entry |
-| `home_assistant_error` | de MA-service gaf een fout of duurde te lang |
+| `home_assistant_error` | de MA-service gaf een fout, of duurde langer dan 10 seconden |
 
 ### 15.7 `domotiapp_alarm/entities/list`
 
@@ -1390,11 +1558,16 @@ van één persoon te ontvangen.
 
 `reason` bij `stopped` is `"user"`, `"timeout"` (de 30 minuten) of `"deleted"`.
 
-**VOORSTEL** dat dit een subscriptie is en geen entiteit. Alternatief was een
-`binary_sensor` per persoon; dat zou de integratie van `integration_type:
-service` naar een entiteitenleverancier maken en per persoon een entiteit
-opleveren die de klant in elke entiteitenkiezer terugziet. Een abonnement houdt
-het binnen de kaart. Zie [OPEN VRAAG](#21-open-vragen).
+**Dit is een abonnement en geen entiteit.** Vastgelegd.
+
+Het alternatief was een `binary_sensor` per persoon. Dat is afgewezen om twee
+redenen: het zou **de entiteitenkiezer van de klant vullen** met entiteiten die hij
+nergens voor nodig heeft, en het zou de integratie van `integration_type: service`
+in een entiteitenleverancier veranderen. Dit product levert bewust **geen**
+entiteiten. Een abonnement houdt de toestand binnen de kaart, waar hij hoort.
+
+De prijs staat er ook bij: de afgaan-toestand is daarmee **niet** beschikbaar voor
+automatiseringen van de klant. Dat is aanvaard.
 
 ### 15.10 Wat er bewust géén commando is
 
@@ -1724,71 +1897,51 @@ Elk punt met één regel waarom.
 
 1. **Buiten de kaart om stoppen wordt niet gemerkt.** Zie
    [sectie 10](#10-hoe-de-wekker-gestopt-wordt).
-2. **De kaart moet openstaan om als stopknop te dienen.** Zie
-   [sectie 4](#4-de-kaart-terwijl-een-wekker-afgaat). Dat is een instructie aan
-   de eigenaar.
-3. **Volledige zekerheid dat er geluid is bestaat niet.** Zie
+2. **De kaart moet openstaan om als stopknop te dienen, en de stoptoestand werkt
+   niet op HA's ingebouwde panelen.** Vastgelegd als beperking, niet als iets dat
+   opgelost wordt.
+
+   Reden: op ingebouwde panelen zoals `/home/overview` worden
+   Lovelace-resources niet geladen, dus de kaart komt daar alleen binnen via
+   `add_extra_js_url` — en dat werkt alleen met een verse `index.html`. Fase 1
+   heeft aangetoond dat een browser die HA al kende vóór de installatie een
+   verouderde `index.html` uit zijn service-workercache haalt, waardoor de kaart
+   op zo'n paneel helemaal niet laadt (`docs/fase-1/RAPPORT.md`, taak H).
+
+   **De instructie in de klantdocumentatie is daarom:** zet de kaart op een
+   **eigen Lovelace-dashboard in sections-weergave**, en zet dát dashboard open op
+   het wandtablet en op de telefoon. Niet op een ingebouwd paneel.
+
+   De consequentie als de eigenaar dat niet doet: de wekker gaat wél af — de
+   integratie plant en vuurt onafhankelijk van de browser — maar er is geen
+   stopknop en hij stopt pas na 30 minuten
+   ([9.4](#94-de-wekker-stopt-na-30-minuten)).
+3. **De volumeresolutie is alleen op Sonos gemeten.** `0.31` → `0.31`,
+   `0.32` → `0.32`, `0.33` → `0.33`, exact — gemeten door de eigenaar, augustus
+   2026. **Chromecast, WiiM en Bluesound zijn niet getoetst.**
+
+   Dit geldt als **aanvaard risico**. HA rekent `int(volume * 100)`
+   (`components/music_assistant/media_player.py:315-318`) en geeft dus 100 stappen
+   door; wat het apparaat daarmee doet, is aan het apparaat. Rondt een speaker af
+   naar stappen van 5 of 10, dan klinkt de oploop op dat merk trapsgewijs. De
+   uitweg is dan de stapconstante uit
+   [9.3](#93-de-volume-oploop) verlagen naar wat dat apparaat aankan; het product
+   hoeft er niets aan te veranderen.
+4. **Volledige zekerheid dat er geluid is bestaat niet.** Zie
    [sectie 11.5](#115-volledige-zekerheid-bestaat-niet).
-4. **Een wekker tussen 02:00 en 02:59 gaat twee nachten per jaar mis.** De editor
+5. **Een wekker tussen 02:00 en 02:59 gaat twee nachten per jaar mis.** De editor
    waarschuwt ([5.3](#53-de-zomertijdwaarschuwing)); het gedrag wordt niet
    gerepareerd.
-5. **Een MA-speaker kan niet aangezet worden.** `power_control` was bij alle
+6. **Een MA-speaker kan niet aangezet worden.** `power_control` was bij alle
    geteste players `"none"` ([7.2](#72-vaststellen-dát-het-een-ma-speaker-is)).
-6. **De opgeslagen URI kan verouderen** als de provider opnieuw gekoppeld wordt
+7. **De opgeslagen URI kan verouderen** als de provider opnieuw gekoppeld wordt
    ([8.2](#82-sla-de-uri-op-niet-de-naam)).
-
----
-
-## 21. Open vragen
-
-Niet zelf ingevuld. Elk punt blokkeert iets concreets in een latere fase.
-
-1. **Hoeveel stappen voelt een volume-oploop vloeiend?** Fase 0b kon de cadans
-   niet meten (browsertimer-throttling) en er zat geen oor bij de speaker. 20
-   stappen van 1 s is een voorstel, geen meting. Blokkeert: de constante in de
-   oploop. Toets T5 in `docs/fase-0b/RAPPORT.md`.
-
-2. **Werken album, artiest en los nummer echt?** Niet getoetst; er was geen
-   streamingprovider op de testinstance. Blokkeert: of
-   [sectie 8](#8-geluid-kiezen) alle zeven soorten mag beloven. Toets T3.
-
-3. **Wat is de volumeresolutie van andere echte speakers dan Sonos?** Op Sonos
-   bevestigd (`0.31` → `0.31`); op Chromecast, WiiM en Bluesound niet. Blokkeert:
-   of de oploop op alle hardware vloeiend kan zijn. Toets T4.
-
-4. **Is er een directere manier om een URI te valideren dan opnieuw zoeken?**
-   [Sectie 11.2](#112-de-uri-wordt-vooraf-gecontroleerd) stelt een zoekopdracht
-   voor, en dat is omslachtig en niet waterdicht. Blokkeert: de noodrem op het
-   geluid.
-
-5. **Moet `radio_mode: true` mee bij een geluid met een eindige duur**, zodat MA
-   eindeloos doorspeelt in dezelfde stijl, in plaats van de waarschuwing uit
-   [8.3](#83-afspelen)? Niet getoetst. Blokkeert: of een los nummer een
-   bruikbare wekker is.
-
-6. **Abonnement of entiteit voor de afgaan-toestand?**
-   [Sectie 15.9](#159-domotiapp_alarmringingsubscribe) kiest een abonnement. Een
-   `binary_sensor` per persoon zou de toestand ook buiten de kaart bruikbaar
-   maken (automatiseringen), tegen de prijs van entiteiten die in elke kiezer
-   opduiken. Blokkeert: de vorm van de WebSocket-API en of dit product
-   entiteiten levert.
-
-7. **Wil de klant zien dat een wekker is overgeslagen** wegens het
-   respijtvenster? [Sectie 13.4](#134-het-respijtvenster-30-minuten) stelt "alleen
-   loggen" voor. Blokkeert: of `last_failure` ook voor niet-fouten gebruikt
-   wordt.
-
-8. **Wat gebeurt er met een eenmalige wekker die is afgegaan** — uitzetten en
-   laten staan ([14.5](#145-wat-er-met-een-afgegane-eenmalige-wekker-gebeurt)) of
-   verwijderen? Voorstel is laten staan. Blokkeert: het schema en de
-   lijstweergave.
-
-9. **Moet de stoptoestand van de kaart ook op HA's ingebouwde panelen werken?**
-   Daar worden Lovelace-resources niet geladen; de kaart komt er alleen binnen
-   via `add_extra_js_url`, en dat werkt alleen met een verse `index.html`
-   (fase 1, taak H). Blokkeert: welke dashboards de eigenaar mag aanbevelen.
-
-10. **Hoe lang mag `sound/search` duren voordat de editor het opgeeft?** MA's
-    zoekopdracht ging in fase 0b in tientallen milliseconden, maar RadioBrowser
-    was wisselvallig en gaf minutenlang fouten. Blokkeert: de time-out en de
-    tekst die de editor toont.
+8. **`audiobook` is niet getoetst.** Zes van de zeven mediasoorten zijn gemeten
+   ([8.2.1](#821-welke-soorten-getoetst-zijn)); voor luisterboeken was er geen
+   provider. Werkt het niet, dan is dat één regel in de soortenlijst.
+9. **Er is één melding per wekker.** Een nieuwe overschrijft de vorige, dus een
+   wekker die gisteren mislukte en vandaag werd overgeslagen toont alleen het
+   overslaan ([14.2.1](#1421-één-veld-voor-fouten-én-mededelingen)).
+10. **De afgaan-toestand is niet beschikbaar voor automatiseringen.** Het is een
+    abonnement en geen entiteit
+    ([15.9](#159-domotiapp_alarmringingsubscribe)).
