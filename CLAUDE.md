@@ -446,27 +446,35 @@ schrijven.
 **CI:** de eerste run (op de PR van fase 1) was **alle vier groen**, hassfest
 inbegrepen.
 
-**De twee vragen die fase 3a moest uitzoeken, beantwoord** (zie
-`docs/fase-3a/RAPPORT.md`):
+**De twee vragen uit fase 3a zijn beslist en in SPEC verwerkt** (fase 3a-bis; zie
+`docs/fase-3a/RAPPORT.md` voor de metingen en `RAPPORT-BIS.md` voor de
+verwerking):
 
-- **`radio_mode`: tak B.** Het parameter is volledig doorverbonden, maar de
-  MA-server gooit `UnsupportedFeaturedException: No Music Provider found that
-  supports requesting similar tracks` — HTTP 500, en er speelt **niets**. Alleen
-  streamingproviders hebben `SIMILAR_TRACKS`. De waarschuwing uit SPEC 8.3 blijft
-  dus staan.
-- **De URI-controle: er is een directe route, maar niet via HA.**
-  `music/item_by_uri` werkt op elke schemaversie en onderscheidt
-  `MediaNotFoundError` van `ProviderUnavailableError` — precies de twee uitkomsten
-  van SPEC 11.2.1. Maar **geen enkele HA-service stelt hem beschikbaar**; ervoor is
-  `entry.runtime_data.mass` van de MA-integratie nodig. Dat is een beslissing voor
-  de eigenaar en blokkeert 3a niet, want de noodrem is fase 3b.
+- **`radio_mode` wordt VOORWAARDELIJK meegestuurd** (SPEC 8.3.1): alleen als de
+  provider van het gekozen geluid `SIMILAR_TRACKS` ondersteunt. Zonder zo'n provider
+  geeft MA `UnsupportedFeaturedException` — HTTP 500 en er speelt **niets**. Faalt de
+  controle zélf, dan wordt `radio_mode` **weggelaten**: hinderlijk is beter dan stil.
+- **De directe URI-controle wordt NIET gebruikt** (SPEC 11.2): `music/item_by_uri`
+  bestaat en geeft drie uitkomsten, maar vereist `entry.runtime_data.mass` — de
+  binnenkant van een andere integratie, en dat breekt bij een update stilletjes. De
+  zoekroute is de vastgelegde route; de directe controle staat als **voorkeursoptie**
+  in SPEC 11.2.2 zodra MA hem als service publiceert.
 
-**Open punten uit fase 1:** `getCardSize()` ontbreekt en masonry-weergave is niet
-gemeten (alleen sections), en `panel: true` is niet aangeraakt — dat laatste staat
-in DomotiApp Scene als openstaand punt (`frontend#52570`) en raakt juist
-kiosk-opstellingen. Voor de stoptoestand is dat inmiddels een vastgelegde
-beperking (SPEC 20.1, punt 2): de kaart hoort op een eigen Lovelace-dashboard in
-sections-weergave, niet op een ingebouwd paneel.
+**Openstaande punten met een fase erbij** — zodat ze niet blijven liggen:
+
+| Punt | Waar | Fase |
+|---|---|---|
+| **Repair issues bij een kapotte persoon en bij een onbruikbare opslag** (SPEC 19.2 geval B regel 4, geval C regel 3). De code logt nu op `ERROR` met de reden, maar maakt geen `issue_registry`-melding aan. SPEC 19.2 blijft ongewijzigd — die beschrijft het gewenste gedrag. | `store.py` | **3b**, samen met de `persistent_notification` uit SPEC 11.7: die twee gebruiken dezelfde machinerie |
+| **`music/item_by_uri` als voorkeursroute** zodra MA hem via een gepubliceerde service beschikbaar stelt (SPEC 11.2.2) | `websocket.py` / noodrem | na een MA-release; iemand moet dit volgen |
+| **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. Naast het nalopen bij een MA-release moet 3b de HTTP 500 van `play_media` expliciet afvangen in plaats van op de lijst te vertrouwen | `const.py` / afvuren | nalopen bij elke MA-release |
+| `getCardSize()` ontbreekt; masonry niet gemeten | de kaart | 4 |
+| `panel: true` niet aangeraakt | de kaart | 4 of later |
+
+Bij de twee kaartpunten in die tabel: `panel: true` staat in DomotiApp Scene als
+openstaand punt (`frontend#52570`) en raakt juist kiosk-opstellingen. Voor de
+stoptoestand is het inmiddels een vastgelegde beperking (SPEC 20.1, punt 2): de
+kaart hoort op een eigen Lovelace-dashboard in sections-weergave, niet op een
+ingebouwd paneel.
 
 ---
 
