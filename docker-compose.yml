@@ -1,0 +1,19 @@
+# Testinstance voor DomotiApp Alarm.
+#
+# `name` staat er expliciet: zonder die regel ziet Docker Compose meerdere
+# compose-bestanden in dezelfde mapstructuur als één project en vervangt het de
+# verkeerde container.
+name: domotiapp-alarm-dev
+
+services:
+  homeassistant:
+    container_name: ha-alarm
+    # Minorversie gepind, niet `stable`: een HA-update midden in een fase maakt
+    # elke meting onvergelijkbaar.
+    image: ghcr.io/home-assistant/home-assistant:2026.8
+    ports:
+      - "8129:8123"
+    restart: "no"
+    volumes:
+      - ./.ha-dev-config:/config
+      - ./custom_components/domotiapp_alarm:/config/custom_components/domotiapp_alarm
