@@ -1,0 +1,31 @@
+# Music Assistant-server naast de HA-testinstance, voor fase 0b.
+#
+# Waarom een APART compose-bestand met een APART project:
+# - `docker compose ls` houdt ze gescheiden, en een `docker compose up` op het
+#   ene project kan de container van het andere nooit vervangen. Dat is dezelfde
+#   reden waarom `name:` in docker-compose.yml expliciet staat.
+# - MA is geen onderdeel van het product; het is testmateriaal. De HA-instance
+#   moet zonder dit bestand kunnen starten.
+#
+# Starten:
+#   docker compose -f docker-compose.music-assistant.yml up -d
+name: domotiapp-alarm-ma
+
+services:
+  music-assistant:
+    container_name: ma-alarm
+    image: ghcr.io/music-assistant/server:latest
+    ports:
+      # 8095 = web-UI en WebSocket-API; 8097 = de audiostream naar de players.
+      # 8123 t/m 8129 zijn bezet door andere projecten.
+      - "8095:8095"
+      - "8097:8097"
+    restart: "no"
+    volumes:
+      - ./.ma-dev-config:/data
+    # MA raadt host-netwerk plus privileged aan voor het ontdekken van echte
+    # hardware via mDNS. Dat werkt op Docker Desktop voor Windows niet zoals op
+    # Linux, en we hebben het niet nodig: fase 0b gebruikt players die MA zelf
+    # aanmaakt, geen hardware in het netwerk.
+    environment:
+      - TZ=Europe/Amsterdam
