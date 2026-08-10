@@ -426,7 +426,8 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 1 | Rooktest: buildketen (lit + esbuild), CI met vier jobs, de integratie serveert en registreert haar eigen kaart langs beide routes, 8 JS- en 10 Python-tests, verificatie op de dev-instance én op een verse instance | gemerged |
 | 2 | `SPEC.md` als bron van waarheid: 20 secties met opslagschema, negen WebSocket-commando's, foutgedrag, wat niet in v1 zit, en tien open vragen | in PR #4 |
 | 2b | De tien open vragen gesloten en sectie 21 verwijderd. `last_failure` hernoemd naar `last_message` met een `severity`. `radio_mode` en de URI-controle doorgeschoven naar fase 3, met beide takken uitgeschreven | gemerged |
-| **3a** | **De server-side laag zonder klok: `store.py` met de kapotte-data-scheiding, `validatie.py` en `volgende.py` (beide puur), `entiteiten.py` met de labelfiltering, en de negen WebSocket-commando's. 112 Python-tests, 13 mutaties nagelopen** | **deze ronde** |
+| 3a | De server-side laag zonder klok: `store.py` met de kapotte-data-scheiding, `validatie.py` en `volgende.py` (beide puur), `entiteiten.py` met de labelfiltering, en de negen WebSocket-commando's. 112 Python-tests, 13 mutaties nagelopen | gemerged |
+| **3b** | **De planner: `planner.py` (plannen, inhaalslag, respijtvenster, herplannen), `afvuren.py` als naad met 3c, `meldingen.py` met de drie kanalen en de repair issues die 3a openliet. 137 Python-tests, 17 mutaties nagelopen, live gemeten afwijking 12 ms** | **deze ronde** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -442,6 +443,35 @@ met validatie en het foutgedrag uit SPEC 19.2, de labelfiltering, en de negen
 WebSocket-commando's. `volgende.py` bevat de rekenkunde voor "wanneer gaat deze
 wekker af" en is **puur** — fase 3b hergebruikt hem in plaats van hem opnieuw te
 schrijven.
+
+**Wat er staat na fase 3b:** de klok erbij. Een wekker gaat op tijd af (live
+gemeten: **12 ms** na het bedoelde moment), een gemiste wekker wordt binnen 30
+minuten ingehaald en daarbuiten overgeslagen met een mededeling, en elke wijziging
+bouwt de planning van nul opnieuw op zodat er geen listener achterblijft. Er wordt
+nog **niets afgespeeld**: `afvuren.py` doet de boekhouding (`last_fired`, `ringing`,
+het `started`-event) en documenteert per regel wat fase 3c waar invult.
+
+**De drie regels van de planner die je niet mag omdraaien** (zie
+`docs/fase-3b/RAPPORT.md`):
+
+1. **`last_fired` gaat vóór het geluid, nooit erna.** Crasht HA tussen die twee, dan
+   is de ergste uitkomst een wekker die niet klonk — andersom een wekker die na elke
+   herstart opnieuw afgaat.
+2. **`last_fired` houdt het *bedoelde* moment vast, niet "nu".** `async_track_time_change`
+   vuurt met 50–500 ms jitter, en bij een inhaalslag liggen die tot 30 minuten uit
+   elkaar. Op "nu" zetten laat de vergelijking elke herstart meeschuiven.
+3. **De vergelijking gaat op een absoluut moment, niet op wandtijd.** Precies daarom
+   gaat een wekker van 02:30 in de najaarsnacht **twee keer** af (`02:30+02:00`, dan
+   `02:30+01:00`), zoals SPEC 13.1 eist.
+
+Verder: `_TrackUTCTimeChange` (`helpers/event.py:1750`) luistert **zelf niet** op
+`EVENT_CORE_CONFIG_UPDATE` — alleen `SunListener` doet dat. De planner luistert er
+daarom zelf op, anders gaat een wekker na een tijdzonewijziging op de oude
+UTC-offset af.
+
+**Openstaand uit 3b:** SPEC 13.4 stap 4 laat twee lezingen toe over `skip_next` bij
+een moment dat buiten het respijtvenster viel. De letterlijke lezing is gebouwd; de
+vraag ligt bij de eigenaar (zie `docs/fase-3b/RAPPORT.md`).
 
 **CI:** de eerste run (op de PR van fase 1) was **alle vier groen**, hassfest
 inbegrepen.
@@ -464,9 +494,10 @@ verwerking):
 
 | Punt | Waar | Fase |
 |---|---|---|
-| **Repair issues bij een kapotte persoon en bij een onbruikbare opslag** (SPEC 19.2 geval B regel 4, geval C regel 3). De code logt nu op `ERROR` met de reden, maar maakt geen `issue_registry`-melding aan. SPEC 19.2 blijft ongewijzigd — die beschrijft het gewenste gedrag. | `store.py` | **3b**, samen met de `persistent_notification` uit SPEC 11.7: die twee gebruiken dezelfde machinerie |
+| **De lezing van SPEC 13.4 stap 4:** verbruikt `skip_next` óók op een moment dat buiten het respijtvenster viel en dus nooit afging? De letterlijke lezing is gebouwd. Bij de andere lezing krijgt SPEC 13.4 stap 4 een clausule en verhuist de `skip_next`-controle naar ná de venstertoets | `planner.py` | **beslissing van de eigenaar** |
 | **`music/item_by_uri` als voorkeursroute** zodra MA hem via een gepubliceerde service beschikbaar stelt (SPEC 11.2.2) | `websocket.py` / noodrem | na een MA-release; iemand moet dit volgen |
-| **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. Naast het nalopen bij een MA-release moet 3b de HTTP 500 van `play_media` expliciet afvangen in plaats van op de lijst te vertrouwen | `const.py` / afvuren | nalopen bij elke MA-release |
+| **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. Naast het nalopen bij een MA-release moet de HTTP 500 van `play_media` expliciet afgevangen worden in plaats van op de lijst te vertrouwen | `const.py` / `afvuren.py` | **3c** (fase 3b speelt niets af), plus nalopen bij elke MA-release |
+| **Music Assistant is niet aan 8129 gekoppeld** (fase 0b: Spotify-OAuth komt niet terug, RadioBrowser antwoordt niet). Daardoor keurt `alarms/save` elke speaker terecht af met `not_allowed` en kan een wekker op de dev-instance alleen via `.storage` gezet worden. Fase 3b's livecontrole liep daarop | de dev-instance | **eigenaar**: een provider zonder OAuth koppelen, nodig vóór 3c live te toetsen |
 | `getCardSize()` ontbreekt; masonry niet gemeten | de kaart | 4 |
 | `panel: true` niet aangeraakt | de kaart | 4 of later |
 

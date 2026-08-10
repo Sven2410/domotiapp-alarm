@@ -9,5 +9,15 @@
     "abort": {
       "already_configured": "DomotiApp Alarm has already been added."
     }
+  },
+  "issues": {
+    "opslag_onbruikbaar": {
+      "title": "The alarm storage is unreadable",
+      "description": "The file `{opslagsleutel}` cannot be read: {reden}\n\nNo alarms are scheduled and nothing is written, so the existing data is not overwritten.\n\nRestore the file from a backup, or delete it to start fresh, and restart Home Assistant afterwards."
+    },
+    "corrupte_opslag": {
+      "title": "The alarms for {persoon} are unreadable",
+      "description": "The stored alarms for **{persoon}** do not match the expected format: {reden}\n\nThe data is kept unchanged. No alarms are scheduled for this person and saving is refused, so the data is not accidentally overwritten. Other people's alarms keep working."
+    }
   }
 }

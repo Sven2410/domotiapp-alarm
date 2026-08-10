@@ -27,6 +27,7 @@ DATA_RESOURCE_ID: Final = "resource_id"
 DATA_STORE: Final = "store"
 DATA_WS_REGISTERED: Final = "ws_registered"
 DATA_RINGING: Final = "ringing"
+DATA_PLANNER: Final = "planner"
 
 # --- Opslag (SPEC 14.1) -------------------------------------------------
 STORAGE_KEY: Final = f"{DOMAIN}.alarms"
@@ -46,6 +47,12 @@ MA_DOMAIN: Final = "music_assistant"
 # enige zeef.
 ATTR_MASS_PLAYER_TYPE: Final = "mass_player_type"
 MASS_PLAYER_TYPE_GROUP: Final = "group"
+
+# --- Planner (SPEC 13.4) ------------------------------------------------
+# Het respijtvenster: een gemiste wekker gaat alsnog af als hij minder dan zoveel
+# minuten te laat is. Bewust een eigen constante en niet dezelfde als de
+# automatische stop uit SPEC 9.4: dat die ook 30 is, is toeval.
+RESPIJT_MINUTEN: Final = 30
 
 # --- Standaardwaarden voor een nieuwe wekker (SPEC 14.3) ----------------
 DEFAULT_TIME: Final = "07:00"

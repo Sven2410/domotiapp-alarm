@@ -9,5 +9,15 @@
     "abort": {
       "already_configured": "DomotiApp Alarm is al toegevoegd."
     }
+  },
+  "issues": {
+    "opslag_onbruikbaar": {
+      "title": "De wekkeropslag is onleesbaar",
+      "description": "Het bestand `{opslagsleutel}` is niet te lezen: {reden}\n\nEr worden **geen wekkers gepland** en er wordt niets weggeschreven, zodat de bestaande gegevens niet overschreven worden.\n\nZet het bestand terug uit een backup, of verwijder het om met een schone lei te beginnen, en herstart Home Assistant daarna. De wekkers moeten dan opnieuw worden ingesteld."
+    },
+    "corrupte_opslag": {
+      "title": "De wekkers van {persoon} zijn onleesbaar",
+      "description": "De opgeslagen wekkers van **{persoon}** voldoen niet aan het verwachte formaat: {reden}\n\nDe gegevens blijven ongewijzigd bewaard. Voor deze persoon worden **geen wekkers gepland** en opslaan wordt geweigerd, zodat de gegevens niet per ongeluk overschreven worden. De wekkers van andere personen werken gewoon.\n\nZet het bestand terug uit een backup, of verwijder de wekkers van deze persoon uit `.storage` en herstart Home Assistant."
+    }
   }
 }
