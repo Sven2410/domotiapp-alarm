@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "DomotiApp Alarm",
+        "description": "There is nothing to configure. Confirm to install the card; it will then be available on any dashboard."
+      }
+    },
+    "abort": {
+      "already_configured": "DomotiApp Alarm has already been added."
+    }
+  }
+}

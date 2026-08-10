@@ -211,9 +211,8 @@ vindplaats wordt zo'n lijst binnen twee maanden folklore.
     `npm install`.** Zonder de eerste zet `core.autocrlf` op Windows de bundel
     om naar CRLF terwijl esbuild LF schrijft, en faalt de bytevergelijking
     zonder dat er iets mis is. Zonder de tweede kan de esbuild-versie afwijken.
-    **Staat er in dit project nog niet in** — bij de eerste commit gaf git al
-    "LF will be replaced by CRLF" op vier bestanden. Regelen in fase 1, vóór er
-    een bundel in de repo staat.
+    **Sinds fase 1 geregeld**: `.gitattributes` staat in de repo en CI gebruikt
+    `npm ci`.
 
 ### Nieuw in fase 0, uit de broncode van 2026.8.1
 
@@ -341,15 +340,40 @@ Vindplaatsen in `docs/fase-0b/RAPPORT.md`.
 
 ---
 
+## Commando's
+
+```bash
+npm install                # eenmalig
+npm run build              # bundelt src/ -> custom_components/.../frontend/
+npm run verify             # faalt als de gecommitte bundel afwijkt van de bron
+npm run check:registratie  # bewaakt de registratieregel (valkuil 1)
+npm test                   # JS-unittests (node --test), geen jsdom
+```
+
+**Python-tests draaien niet op Windows** — Home Assistant importeert `fcntl`.
+Draai ze in Linux:
+
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm -v "C:/dev/domotiapp-alarm:/app" -w /app \
+  python:3.14-slim sh -c "pip install -q -r requirements-test.txt && python -m pytest -q"
+```
+
+CI draait vier jobs: bundelvergelijking + registratieregel, hassfest op het
+manifest, JS-tests, Python-tests.
+
+**Na elke `npm run build` de config entry herladen**, daarna pas hard herladen in
+de browser. De `?v=` is de bundelhash en die wordt bij setup berekend (valkuil 2).
+
+---
+
 ## Releaseprocedure
 
-Nog niet van toepassing: er is nog geen manifest, geen bundel en geen CI. Wat er
-uit DomotiApp Scene overgenomen moet worden zodra die er zijn — het is daar drie
-keer bijna misgegaan en één keer echt:
+Nog geen release gemaakt; de eerste versie is `0.1.0`. De procedure staat er al
+omdat hij in DomotiApp Scene drie keer bijna misging en één keer echt.
 
-Het versienummer uit `manifest.json` hoort in de bundel geïnjecteerd te worden.
-Een versieverhoging verandert dan de bytes van de bundel, ook als er in `src/`
-niets is gewijzigd. In DomotiApp Scene is bij 1.0.1 de versie opgehoogd zonder
+Het versienummer uit `manifest.json` wordt in de bundel geïnjecteerd
+(`scripts/build.mjs`, `define: __CARD_VERSION__`). Een versieverhoging verandert
+dus de bytes van de bundel, ook als er in `src/` niets is gewijzigd. In DomotiApp Scene is bij 1.0.1 de versie opgehoogd zonder
 opnieuw te bouwen; de CI-job "Bundel komt overeen met de bron" ving dat, `main`
 stond rood en er moest een 1.0.2 aan te pas komen.
 

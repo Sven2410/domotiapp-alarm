@@ -1,0 +1,7 @@
+# Deze versie levert exact homeassistant 2026.8.1 mee — dezelfde versie als de
+# ontwikkelcontainer ha-alarm (image :2026.8).
+pytest-homeassistant-custom-component==0.13.355
+
+# De testharnas installeert het frontend-pakket niet mee, terwijl de tests de
+# component frontend echt opzetten. Versie gelijk aan die in de container.
+home-assistant-frontend==20260729.6

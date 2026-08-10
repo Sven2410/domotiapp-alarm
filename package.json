@@ -1,0 +1,18 @@
+{
+  "name": "domotiapp-alarm-card",
+  "description": "Lovelace-kaart van de DomotiApp Alarm-integratie. De versie staat in custom_components/domotiapp_alarm/manifest.json, niet hier.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "verify": "node scripts/build.mjs --check",
+    "test": "node --test \"tests/js/**/*.test.mjs\"",
+    "check:registratie": "node scripts/check-registratie.mjs"
+  },
+  "dependencies": {
+    "lit": "3.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.10"
+  }
+}
