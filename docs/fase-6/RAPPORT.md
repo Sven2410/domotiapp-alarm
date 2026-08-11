@@ -608,5 +608,31 @@ grens staat onder "Wat niet lukte".
 
 ## `git status --porcelain`
 
-Zie het einde van de terminaluitvoer bij deze fase; de stand op het moment van
-schrijven staat in de PR-beschrijving.
+Vlak vóór de commit, op branch `fase-6/productiebevindingen`:
+
+```
+ M CLAUDE.md
+ M SPEC.md
+ M custom_components/domotiapp_alarm/afvuren.py
+ M custom_components/domotiapp_alarm/const.py
+ M custom_components/domotiapp_alarm/meldingen.py
+ M custom_components/domotiapp_alarm/planner.py
+ M custom_components/domotiapp_alarm/volgende.py
+ M custom_components/domotiapp_alarm/voorbeeld.py
+ M custom_components/domotiapp_alarm/websocket.py
+ M tests/conftest.py
+ M tests/test_afvuren.py
+ M tests/test_planner.py
+ M tests/test_websocket.py
+?? custom_components/domotiapp_alarm/shuffle.py
+?? docs/fase-6/
+?? scripts/mutaties-fase-6.py
+?? tests/test_shuffle.py
+```
+
+Ná de commit en de push: leeg. `custom_components/domotiapp_alarm/frontend/` staat
+er **niet** tussen — er is niets aan `src/` veranderd en de bundel is byte-identiek
+gebleven.
+
+**CI op de PR: alle vier groen** (bundelvergelijking, hassfest, JS-tests,
+Python-tests), run `31514349229`.
