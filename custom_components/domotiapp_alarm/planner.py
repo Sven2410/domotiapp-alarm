@@ -340,13 +340,19 @@ class Planner:
         `last_fired` wordt **wel** op dit moment gezet. Anders zou de inhaalslag na
         een herstart hetzelfde overgeslagen moment opnieuw als "gemist" zien en er een
         tweede mededeling voor achterlaten.
+
+        En een **eenmalige** wekker gaat hier ook uit (SPEC 14.5). Overslaan verbruikt
+        het moment net zo goed als afgaan — dat is de letterlijke lezing van SPEC 13.4
+        stap 4 die de eigenaar in fase 3c koos. Zou de schakelaar aan blijven, dan
+        staat er een wekker aan die nooit meer iets doet. Welke velden dat precies
+        zijn staat op één plek, in `afvuren._velden_bij_verbruikt_moment`.
         """
         store = self.hass.data[DOMAIN][DATA_STORE]
         await meldingen.async_meld(self.hass, store, registry_id, wekker, kind)
         await store.async_werk_velden_bij(
             registry_id,
             wekker["id"],
-            {"skip_next": False, "last_fired": moment.isoformat()},
+            {"skip_next": False, **afvuren.velden_bij_verbruikt_moment(wekker, moment)},
         )
 
     # --- de inhaalslag (SPEC 13.4) --------------------------------------

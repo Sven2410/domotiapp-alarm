@@ -397,6 +397,52 @@ async def test_skip_next_slaat_een_moment_over_en_wordt_gewist(
     assert afgegaan(hass, registry_id), "de dag erna hoort hij weer af te gaan"
 
 
+async def test_een_overgeslagen_eenmalige_wekker_gaat_ook_uit(
+    hass: HomeAssistant, hass_storage, freezer
+) -> None:
+    """NIEUW GEDRAG. Bevinding 3, langs de tweede route.
+
+    Overslaan verbruikt het moment net zo goed als afgaan — dat is de letterlijke
+    lezing van SPEC 13.4 stap 4 die de eigenaar in fase 3c koos. Bij een eenmalige
+    wekker hoort de schakelaar er dus ook mee omlaag (SPEC 14.5).
+
+    Deze route is met opzet apart getoetst: hij loopt **niet** door `afvuren.py` maar
+    door `_async_sla_over` in de planner, en dat is precies het soort tweede pad
+    waarvan valkuil 34 zegt dat je erop moet toetsen in plaats van erop te vertrouwen.
+    """
+    freezer.move_to(dt.datetime(2026, 8, 10, 12, 0, tzinfo=AMS))
+    moment = dt.datetime(2026, 8, 10, 6, 45, tzinfo=AMS)  # ruim buiten het respijt
+    registry_id = await zet_op(
+        hass,
+        [volledige_wekker(time="06:45", days=[], one_shot_at=moment.isoformat())],
+        hass_storage,
+    )
+
+    assert not afgegaan(hass, registry_id)
+    wekker = uit_opslag(hass, registry_id)
+    assert wekker["last_message"]["kind"] == meldingen.KIND_SKIPPED_GRACE_WINDOW
+    assert wekker["enabled"] is False
+
+
+async def test_een_overgeslagen_herhalende_wekker_blijft_aan(
+    hass: HomeAssistant, hass_storage, freezer
+) -> None:
+    """REGRESSIEWACHT. De positieve controle bij de test hierboven.
+
+    Zonder deze zou een implementatie die bij élk overslaan `enabled: false` zet er
+    doorheen komen — en die zet na één nacht zonder Home Assistant alle wekkers in
+    huis uit.
+    """
+    freezer.move_to(dt.datetime(2026, 8, 10, 12, 0, tzinfo=AMS))
+    registry_id = await zet_op(
+        hass, [volledige_wekker(time="06:45", days=[1, 2, 3, 4, 5])], hass_storage
+    )
+
+    wekker = uit_opslag(hass, registry_id)
+    assert wekker["last_message"]["kind"] == meldingen.KIND_SKIPPED_GRACE_WINDOW
+    assert wekker["enabled"] is True
+
+
 # --- 7, 8, 11. herplannen ---------------------------------------------
 
 

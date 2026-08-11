@@ -13,6 +13,7 @@ directe functieaanroep.
 
 from __future__ import annotations
 
+import datetime as _dt
 from typing import Any
 
 import pytest
@@ -20,7 +21,7 @@ import pytest
 from homeassistant.components.media_player import MediaPlayerEntityFeature
 from homeassistant.core import HomeAssistant
 
-from custom_components.domotiapp_alarm.const import DOMAIN
+from custom_components.domotiapp_alarm.const import DATA_STORE, DOMAIN
 
 from .conftest import (
     PERSON_ENTITY_ID,
@@ -315,8 +316,6 @@ async def test_eenmalige_wekker_krijgt_one_shot_at(
     # Met tijdzone, want zonder is het moment niet eenduidig (SPEC 14.2). Niet op
     # "+" testen: de testinstance draait niet op Europe/Amsterdam en een negatieve
     # offset is even geldig.
-    import datetime as _dt
-
     assert _dt.datetime.fromisoformat(wekker["one_shot_at"]).tzinfo is not None
 
 
@@ -468,6 +467,194 @@ async def test_set_enabled_en_skip_next(
     assert wekker["enabled"] is False
     assert wekker["skip_next"] is False, "uitzetten hoort skip_next te wissen"
     assert antwoord["result"]["next_fire"] is None
+
+
+async def _verlopen_eenmalige(hass: HomeAssistant, client, registry_id: str) -> str:
+    """Sla een eenmalige wekker op en laat hem eruitzien alsof hij is afgegaan.
+
+    Dat is precies de toestand waarin de eigenaar hem 's ochtends aantrof, en sinds
+    deze ronde ook de toestand die het afvuren zelf achterlaat: `enabled: false`, een
+    `one_shot_at` in het verleden, `last_fired` erop.
+    """
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/save",
+            "person": PERSON_ENTITY_ID,
+            "alarm": geldige_wekker(days=[], time="06:45"),
+        },
+    )
+    assert antwoord["success"], antwoord
+    alarm_id = antwoord["result"]["alarms"][0]["id"]
+
+    store = hass.data[DOMAIN][DATA_STORE]
+    verleden = "2020-01-01T06:45:00+01:00"
+    await store.async_werk_velden_bij(
+        registry_id,
+        alarm_id,
+        {"enabled": False, "one_shot_at": verleden, "last_fired": verleden},
+    )
+    return alarm_id
+
+
+async def test_aanzetten_van_een_verlopen_eenmalige_wekker_geeft_een_nieuw_moment(
+    hass: HomeAssistant, hass_ws_client, omgeving
+) -> None:
+    """NIEUW GEDRAG. Bevinding 3, tweede helft, en het gedrag dat de eigenaar vroeg.
+
+    Zonder deze berekening is de schakelaar een knop die niets doet: `one_shot_at`
+    ligt in het verleden, de planner plant hem niet (rem 1 van SPEC 13.1), en de kaart
+    toont "geen volgende keer" bij een wekker die aan staat.
+
+    De assertie staat op `next_fire` en niet alleen op `one_shot_at`, want dat is wat
+    de klant ziet — en het bewijst tegelijk dat de planner het nieuwe moment ook
+    werkelijk kan gebruiken.
+    """
+    client = await hass_ws_client(hass)
+    alarm_id = await _verlopen_eenmalige(hass, client, omgeving)
+
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/set_enabled",
+            "person": PERSON_ENTITY_ID,
+            "alarm_id": alarm_id,
+            "enabled": True,
+        },
+    )
+    assert antwoord["success"], antwoord
+    wekker = antwoord["result"]["alarms"][0]
+    assert wekker["enabled"] is True
+
+    nieuw = _dt.datetime.fromisoformat(wekker["one_shot_at"])
+    assert nieuw > _dt.datetime.now(_dt.UTC), wekker["one_shot_at"]
+    # Dezelfde wandkloktijd; alleen de dag schuift op (SPEC 15.3).
+    assert nieuw.strftime("%H:%M") == "06:45"
+    assert antwoord["result"]["next_fire"]["at"] == wekker["one_shot_at"]
+    assert antwoord["result"]["next_fire"]["alarm_id"] == alarm_id
+
+
+async def test_uitzetten_en_aanzetten_verzet_een_toekomstige_wekker_niet(
+    hass: HomeAssistant, hass_ws_client, omgeving
+) -> None:
+    """NIEUW GEDRAG, en de rem op de test hierboven.
+
+    Een implementatie die bij élk aanzetten opnieuw rekent, haalt de wekker naar
+    **vroeger**: staat een wekker van 06:45 op morgen en zet de klant hem om 05:00 uit
+    en weer aan, dan is de eerstvolgende 06:45 vandaag. Een wekker die anderhalf uur
+    later afgaat dan de klant zag, is erger dan de knop die we repareren.
+
+    Deze test gebruikt de wekker zoals `alarms/save` hem net heeft berekend, dus het
+    moment ligt gegarandeerd in de toekomst.
+    """
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/save",
+            "person": PERSON_ENTITY_ID,
+            "alarm": geldige_wekker(days=[], time="06:45"),
+        },
+    )
+    alarm_id = antwoord["result"]["alarms"][0]["id"]
+    origineel = antwoord["result"]["alarms"][0]["one_shot_at"]
+
+    for aan in (False, True):
+        antwoord = await _stuur(
+            client,
+            {
+                "type": f"{DOMAIN}/alarms/set_enabled",
+                "person": PERSON_ENTITY_ID,
+                "alarm_id": alarm_id,
+                "enabled": aan,
+            },
+        )
+        assert antwoord["success"], antwoord
+
+    assert antwoord["result"]["alarms"][0]["one_shot_at"] == origineel
+
+
+async def test_een_toekomstig_moment_blijft_staan_ook_als_het_afwijkt(
+    hass: HomeAssistant, hass_ws_client, omgeving
+) -> None:
+    """NIEUW GEDRAG, en dit is de test die de rem écht toetst.
+
+    `test_uitzetten_en_aanzetten_verzet_een_toekomstige_wekker_niet` hierboven kan de
+    rem **niet** vangen, en dat is narekenbaar: `one_shot_at` is door `alarms/save`
+    berekend als "de eerstvolgende 06:45 ná toen", en zolang dat moment nog in de
+    toekomst ligt is "de eerstvolgende 06:45 ná nu" dezelfde. Opnieuw rekenen levert
+    daar per definitie hetzelfde op. Gemeten in de mutatieproef van fase 6 (M17): het
+    weghalen van de rem bleef daar ongestraft.
+
+    Een toekomstig moment dat **niet** op de ingestelde wandkloktijd valt, is wél te
+    onderscheiden. Dat is geen kunstmatig geval: na een tijdzonewijziging (SPEC 13.2)
+    is precies dat de stand, want `one_shot_at` is een absoluut moment en de offset
+    eronder is verschoven.
+
+    Wat de rem hier bewaakt: aanzetten is geen herberekening. Wie het moment wil
+    verzetten, slaat de wekker op.
+    """
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/save",
+            "person": PERSON_ENTITY_ID,
+            "alarm": geldige_wekker(days=[], time="06:45"),
+        },
+    )
+    alarm_id = antwoord["result"]["alarms"][0]["id"]
+
+    # Een uur later dan de wandkloktijd, en met zekerheid in de toekomst.
+    afwijkend = (_dt.datetime.now(_dt.UTC) + _dt.timedelta(days=2)).replace(
+        hour=7, minute=45, second=0, microsecond=0
+    )
+    store = hass.data[DOMAIN][DATA_STORE]
+    await store.async_werk_velden_bij(
+        omgeving, alarm_id, {"enabled": False, "one_shot_at": afwijkend.isoformat()}
+    )
+
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/set_enabled",
+            "person": PERSON_ENTITY_ID,
+            "alarm_id": alarm_id,
+            "enabled": True,
+        },
+    )
+    assert antwoord["success"], antwoord
+    assert antwoord["result"]["alarms"][0]["one_shot_at"] == afwijkend.isoformat()
+
+
+async def test_aanzetten_van_een_herhalende_wekker_verzint_geen_one_shot_at(
+    hass: HomeAssistant, hass_ws_client, omgeving
+) -> None:
+    """REGRESSIEWACHT. Een herhalende wekker heeft geen `one_shot_at` (SPEC 14.2).
+
+    De schemaregel in `validatie.py` weigert de combinatie van `days` en
+    `one_shot_at`, dus een implementatie die hier zou rekenen maakt de wekker
+    **onopslaanbaar** — en dat komt pas boven bij de eerstvolgende save. Slaagt op de
+    oude code; hij staat er omdat de nieuwe regel precies hier langs kan gaan.
+    """
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(
+        client,
+        {"type": f"{DOMAIN}/alarms/save", "person": PERSON_ENTITY_ID, "alarm": geldige_wekker()},
+    )
+    alarm_id = antwoord["result"]["alarms"][0]["id"]
+
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/set_enabled",
+            "person": PERSON_ENTITY_ID,
+            "alarm_id": alarm_id,
+            "enabled": True,
+        },
+    )
+    assert antwoord["success"], antwoord
+    assert antwoord["result"]["alarms"][0]["one_shot_at"] is None
 
 
 async def test_delete_verwijdert_en_onbekende_id_geeft_not_found(

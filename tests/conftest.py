@@ -203,7 +203,7 @@ class Speelhuis:
     Wat hier gemockt wordt zijn **HA-services van andere integraties**, en dat is de
     enige eerlijke manier: `music_assistant` is er niet in een test, en de vier
     aanroepen die deze fase doet (`play_media`, `volume_set`, `media_stop`,
-    `light.turn_on`) zijn precies de grens van dit product.
+    `shuffle_set`, `light.turn_on`) zijn precies de grens van dit product.
 
     **Er wordt niets van onze eigen code gemockt.** Dat is het verschil met een test
     die "de setup faalt niet" bewijst: de volgorde, de clamping, de terugval op
@@ -219,6 +219,10 @@ class Speelhuis:
         self.hass = hass
         self.aanroepen: list[tuple[str, dict[str, Any]]] = []
         self.faal: set[str] = set()
+        # De tekst die de gefaalde aanroep meegeeft. Dat is niet altijd hetzelfde:
+        # Music Assistant geeft er een ("No playable items found"), HA's eigen fouten
+        # soms geen. Een lege string bootst dat tweede geval na.
+        self.faalreden: dict[str, str] = {}
         self.zoekresultaat: dict[str, Any] | None = None
         self.zoekfout: Exception | None = None
         # Het volume dat de nagebootste speaker "heeft". `volume_set` werkt het bij,
@@ -229,7 +233,9 @@ class Speelhuis:
     def _boek(self, naam: str, data: dict[str, Any]) -> None:
         self.aanroepen.append((naam, dict(data)))
         if naam in self.faal:
-            raise HomeAssistantError(f"{naam} geweigerd door de test")
+            raise HomeAssistantError(
+                self.faalreden.get(naam, f"{naam} geweigerd door de test")
+            )
 
     def namen(self) -> list[str]:
         """Alleen de namen, in volgorde. Hiermee wordt de volgorde uit SPEC 9.1 getoetst."""
@@ -266,6 +272,9 @@ class Speelhuis:
         async def _licht(call) -> None:
             self._boek("light.turn_on", call.data)
 
+        async def _shuffle(call) -> None:
+            self._boek("media_player.shuffle_set", call.data)
+
         self.hass.services.async_register("music_assistant", "play_media", _play)
         self.hass.services.async_register(
             "music_assistant",
@@ -275,6 +284,7 @@ class Speelhuis:
         )
         self.hass.services.async_register("media_player", "volume_set", _volume)
         self.hass.services.async_register("media_player", "media_stop", _stop)
+        self.hass.services.async_register("media_player", "shuffle_set", _shuffle)
         self.hass.services.async_register("light", "turn_on", _licht)
 
         # `noodrem.controleer_speaker` en `async_controleer_uri` vragen naar een geladen

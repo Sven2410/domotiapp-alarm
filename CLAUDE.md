@@ -558,6 +558,67 @@ Vindplaatsen in `docs/fase-4b/RAPPORT.md`.
     HA-component werkt" afleiden dat de volgende er ook is. Meet per component
     met `customElements.get(...)` vóór je erop bouwt.
 
+### Nieuw in fase 6, uit drie bevindingen in productie
+
+Vindplaatsen in `docs/fase-6/RAPPORT.md`.
+
+51. **Music Assistant past shuffle toe op het moment dat de QUEUE GELADEN wordt.**
+    `controllers/player_queues.py:1533` in 2.9.11:
+    `shuffle = queue.shuffle_enabled and len(queue_items) > 1 and not radio_mode`.
+    Een `media_player.shuffle_set` **ná** `play_media` schudt alleen de nummers ná
+    het eerste, en dan begint de wekker nog steeds elke ochtend hetzelfde — precies
+    de klacht die je dacht op te lossen. `music_assistant.play_media` heeft géén
+    shuffle-veld. Gemeten: zonder shuffle 3× hetzelfde eerste nummer, met shuffle 4×
+    vier verschillende. **De algemene vorm:** wat de queue bepaalt moet er zijn
+    vóórdat de queue bestaat — dezelfde regel als "volume op 0 vóór het geluid".
+
+52. **Een eis die in SPEC staat is geen eis die in de code staat.** SPEC 14.5
+    ("na afgaan wordt `enabled` op `false` gezet") stond er sinds fase 2 en er was
+    **nergens** code die het deed. Drie fases met livemetingen liepen er langs, en
+    de reden is banaal: alle metingen gebruikten **herhalende** wekkers, want die
+    zijn makkelijker te herhalen. De klant gebruikte een eenmalige.
+    **Wat dit vraagt:** bij een SPEC-sectie die gedrag voorschrijft, zoek de test
+    die hem noemt. Vind je er geen, dan is er geen — hoe zorgvuldig de sectie ook
+    geschreven is. En kijk welk pad je metingen structureel vermijden.
+
+53. **Een melding mag alleen zeggen wat er is vastgesteld.** `sound_gone` beweerde
+    *"het gekozen geluid bestaat niet meer"* terwijl er alleen vaststond dat
+    `play_media` had geweigerd; in productie bestond het geluid en was Spotify niet
+    geautoriseerd. De klant — of de eigenaar — kijkt dan een half uur de verkeerde
+    kant op, en dat is duurder dan geen melding. **Neem de reden van de dienst
+    over** als die er is: die wijst wél naar de oorzaak. Twee teksten met dezelfde
+    fout staan nog open: `volume_ramp_unavailable` beweert *"op het ingestelde
+    volume"* na een `volume_set` waarvan de uitkomst niet gelezen wordt, en
+    `skipped_grace_window` leidt *"omdat Home Assistant uit stond"* af uit een
+    moment dat alleen maar verstreken is.
+
+54. **MA heeft een ingebouwde `test`-muziekprovider, en die maakt album en
+    afspeellijst toetsbaar zonder streamingprovider.** 5 artiesten, 25 albums, 500
+    tracks, gestreamd als een lang stiltebestand — genoeg om een queue te laden en
+    de volgorde te meten. Hij stond op deze instance al aan.
+    **Zijn grens:** `get_album_tracks` is niet geïmplementeerd, dus een **album**
+    afspelen geeft `NotImplementedError`. Een **afspeellijst** (`library://playlist/6`,
+    "Recently added tracks") speelt wél. Dat album is daarmee overigens het perfecte
+    materiaal voor valkuil 53: een geluid dat aantoonbaar bestaat en toch niet start.
+
+55. **Reken na vóór je een regel onbereikbaar noemt — en reken dan door.** De rem
+    "bereken `one_shot_at` alleen opnieuw als hij verstreken is" was met geen enkele
+    test via de gewone API te vangen, en dat is narekenbaar: `one_shot_at` is altijd
+    "de eerstvolgende wektijd ná toen", dus zolang hij in de toekomst ligt is
+    opnieuw rekenen per definitie een no-op. De verleiding is dan de regel te
+    schrappen (valkuil 34, derde rij). Fout: er is één toestand waarin hij wél iets
+    doet — na een **tijdzonewijziging** is `one_shot_at` een absoluut moment dat
+    niet meer op de wandkloktijd valt. Het narekenen moet dus tot het einde: niet
+    "geen test vangt hem" maar "er is geen invoer waarbij hij iets verandert".
+
+56. **De state loopt achter op het log.** `play_media` blokkeert 2,1–2,6 s en de
+    entiteit verandert daarna pas. Lees je `media_title` op het moment dat het
+    HA-log "afgegaan" meldt, dan krijg je de waarde van de **vorige** meting — en
+    dat ziet eruit als "shuffle werkt niet". Dit is valkuil 37 in een variant: niet
+    een bevroren `hass`, maar een verse `hass` die de nieuwe waarde nog niet heeft.
+    Wacht een paar seconden, of vergelijk op **verandering** in plaats van op
+    waarde.
+
 ```bash
 npm install                # eenmalig
 npm run build              # bundelt src/ -> custom_components/.../frontend/
@@ -584,8 +645,10 @@ de browser. De `?v=` is de bundelhash en die wordt bij setup berekend (valkuil 2
 
 ## Releaseprocedure
 
-Nog geen release gemaakt; de eerste versie is `0.1.0`. De procedure staat er al
-omdat hij in DomotiApp Scene drie keer bijna misging en één keer echt.
+**`1.0.0` is uitgebracht** (tag en release door de eigenaar, na fase 5) en draait
+bij hem in productie. De procedure hieronder staat er al sinds fase 0, omdat hij in
+DomotiApp Scene drie keer bijna misging en één keer echt — hij geldt nu voor elke
+volgende versie.
 
 Het versienummer uit `manifest.json` wordt in de bundel geïnjecteerd
 (`scripts/build.mjs`, `define: __CARD_VERSION__`). Een versieverhoging verandert
@@ -659,7 +722,8 @@ en die draait alleen bij opname in de standaardwinkel. Zie
 | 4a | De kaart in rusttoestand en de stoptoestand: lijst, schakelaar, overloopmenu, bevestiging bij verwijderen, melding met "Begrepen", en de kaart die één stopknop wordt. Twee pure modules (`weergave.js`, `kaartconfig.js`), de config-editor met `ha-form`. Een **tiende commando** `alarms/clear_message` erbij, want SPEC 11.7 vroeg een knop die SPEC 15 niet kon bedienen; SPEC 15.10/15.11 bijgewerkt met toestemming van de eigenaar. 40 JS- en 216 Python-tests, 28 mutaties (2 gaten gevonden) | gemerged |
 | 4b | De editor (SPEC 5) achter de plusknop en achter een tik op een rij, met zoeken in MA, de zomertijdwaarschuwing en de voorbeeldknop. `ringing/subscribe` verbreed tot `updates/subscribe` met een `changed`-bericht uit de opslaglaag — daarmee is het openstaande punt van 4a gesloten. `preview/start` als abonnement, zodat een weggeklikt tabblad het geluid stopt (gemeten: 8,8 s). 69 JS- en 238 Python-tests, 31 mutaties in twee rondes | gemerged |
 | 4c | De twee openstaande SPEC-punten van 4b gedicht: `sound/search` geeft per treffer `endless` (op dezelfde providerlijst als het afvuren) en `entities/list` geeft `filtered_out`, waarmee de drie situaties van SPEC 7.4 onderscheidbaar zijn. Het zoekveld past nu op een telefoon: placeholder "Zoek media", knop een vergrootglas. 77 JS- en 264 Python-tests, 23 mutaties in twee rondes | gemerged |
-| **5** | **HACS-klaar: `manifest.json` en `hacs.json` geverifieerd tegen hassfest én HACS' eigen schema's (beide echt gedraaid, met negatieve controle), README herschreven voor de klant, en de installatie bewezen op een verse HA op 8130 waar de integratie als **kopie** in staat zoals HACS hem levert. Geen functionele wijziging** | **deze ronde, PR #12** |
+| 5 | HACS-klaar: `manifest.json` en `hacs.json` geverifieerd tegen hassfest én HACS' eigen schema's (beide echt gedraaid, met negatieve controle), README herschreven voor de klant, en de installatie bewezen op een verse HA op 8130 waar de integratie als **kopie** in staat zoals HACS hem levert. Geen functionele wijziging | gemerged, 1.0.0 |
+| **6** | **Drie bevindingen uit productie op 1.0.0. (1) Shuffle staat nu altijd aan bij afspeellijst, album en artiest — `media_player.shuffle_set` vóór `play_media`, want MA schudt bij het laden van de queue (SPEC 9.6, nieuw). (2) De melding `sound_gone` zei "bestaat niet meer" terwijl het geluid bestond; hij zegt nu "kon niet gestart worden" mét de reden van MA (SPEC 11.7 herschreven — buiten de gestelde grens, gemeld). (3) Een afgelopen eenmalige wekker zette zichzelf nooit uit terwijl SPEC 14.5 dat sinds fase 2 eist; dat is nu op alle drie de routes gerepareerd, en opnieuw aanzetten geeft een nieuwe `one_shot_at` (SPEC 15.3). 297 Python-tests, 22 mutaties in twee rondes (3 gaten gedicht). Audit van SPEC 11.7: nog twee teksten claimen te veel** | **deze ronde, PR #13** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -825,8 +889,8 @@ past op een telefoon.
 de plusknop en achter een tik op een rij, met de tijdkiezer, de herhaaldagen, het zoeken
 in Music Assistant, de speaker- en lampkiezer, de zomertijdwaarschuwing en de
 voorbeeldknop. Wat er niet meer op de lijst staat: niets uit SPEC 1 t/m 20 dat gebouwd
-moest worden. Wat er nog wél is: de openstaande punten hieronder, en er is nog **geen
-release** — versie staat op `0.1.0`.
+moest worden. Wat er nog wél is: de openstaande punten hieronder. *(Ten tijde van 4b
+stond de versie op `0.1.0` en was er nog geen release; die kwam na fase 5.)*
 
 **De twee regels van fase 4b die je niet mag omdraaien** (zie
 `docs/fase-4b/RAPPORT.md`):
@@ -844,7 +908,28 @@ release** — versie staat op `0.1.0`.
    door op een speaker waarvan het volume ook nog verzet is. Gemeten in fase 4b: tabblad
    dicht → **8,8 s later** stond het volume terug.
 
-### Waar fase 5 begint
+**Wat er staat na fase 6:** het product draait bij de eigenaar en heeft zijn eerste
+drie productiebevindingen achter de rug. Een afspeellijst begint niet meer elke
+ochtend hetzelfde (SPEC 9.6), de melding bij een mislukt afspelen zegt wat er is
+vastgesteld in plaats van wat we vermoeden (SPEC 11.7), en een afgelopen eenmalige
+wekker zet zichzelf uit en is met de schakelaar weer tot leven te wekken (SPEC 14.5
+en 15.3).
+
+**De drie regels van fase 6 die je niet mag omdraaien** (zie
+`docs/fase-6/RAPPORT.md`):
+
+1. **Shuffle gaat vóór het geluid**, om precies dezelfde reden als volume nul: MA
+   past shuffle toe bij het **laden** van de queue, dus erna schud je alleen de rest
+   (valkuil 51).
+2. **Een melding zegt alleen wat is vastgesteld.** De reden van de dienst gaat mee
+   als die er is; ontbreekt hij, dan staat er niets in plaats van een gok
+   (valkuil 53).
+3. **Een verbruikt moment zet een eenmalige wekker uit — op alle drie de routes.**
+   Afgegaan, tegengehouden door de noodrem, of overgeslagen: het staat in één
+   functie (`afvuren.velden_bij_verbruikt_moment`) juist omdat het anders per route
+   uiteenloopt.
+
+### Waar de volgende fase begint
 
 `SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **elf** commando's die de
 kaart mag gebruiken; dat is de bron, niet dit bestand. Wat hieronder staat is wat je
@@ -898,6 +983,8 @@ verkleinen, wat op een gemaximaliseerd venster niet lukt (fase 4c).
 | Lamp | via `demo:` in `configuration.yaml`; er stond geen enkele `light`-entiteit |
 | Speakers | twee snapclients in de MA-container; herstarten met het commando bij "Music Assistant-testserver" |
 | Geluid dat werkt | zoek op `Beat Blender`, kies de `radiobrowser://`- of de `somafm://`-treffer |
+| Afspeellijst die werkt | `library://playlist/6` — "Recently added tracks", 500 tracks uit MA's `test`-provider. De enige manier om shuffle te meten op deze instance (valkuil 54) |
+| Geluid dat aantoonbaar bestaat en tóch niet start | `library://album/1` — een album uit dezelfde provider; `get_album_tracks` ontbreekt en MA geeft `NotImplementedError`. Precies het geval van bevinding 2 |
 | Persoon | `person.dev` |
 
 Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
@@ -910,7 +997,10 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | **`music/item_by_uri` als voorkeursroute** zodra MA hem via een gepubliceerde service beschikbaar stelt (SPEC 11.2.2) | `websocket.py` / noodrem | na een MA-release; iemand moet dit volgen |
 | **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
 | **De volume-oploop begint 2,1–2,6 s te laat** doordat `play_media` blokkeert tot MA de stream heeft opgezet. Niet-blokkerend aanroepen kan niet: `core.py:2953-2959` vangt de exceptie binnen HA af, en dan vervallen de `radio_mode`-terugval én de foutmelding. De oploop eerder starten verandert SPEC 9.1 en de betekenis van het `started`-event. **Aanbeveling die niet gebouwd is:** de oploop laten *inhalen* — begin op de stap die bij de verstreken tijd hoort. Meting ligt vast in SPEC 20.1 punt 9 | `afvuren.py` / SPEC 9.1, 9.3 | **beslissing van de eigenaar** |
-| **De tekst van SPEC 11.7 bij `sound_gone` stelt het zekerder dan de code weet**: "het gekozen geluid bestaat niet meer" terwijl er alleen vaststaat dat het niet startte. De soort is juist, de formulering claimt te veel. `"kon niet gestart worden"` zou nauwkeuriger zijn | SPEC 11.7 | **eigenaar**, woordkeuze |
+| ~~De tekst bij `sound_gone` claimt te veel~~ **OPGELOST in fase 6**: hij zegt nu "kon niet gestart worden" met de reden van MA erbij | SPEC 11.7 | gedaan |
+| **`volume_ramp_unavailable` claimt "afgegaan op het ingestelde volume"** terwijl de `volume_set` die dat zou doen dezelfde is die net weigerde, en de uitkomst ervan niet gelezen wordt (`afvuren.py:198-210`). Voorstel: *"De wekker is afgegaan, maar het volume was op deze speaker niet in te stellen; het oplopende volume is overgeslagen."* | SPEC 11.7 | **eigenaar**, woordkeuze |
+| **`skipped_grace_window` claimt "omdat Home Assistant uit stond"** terwijl alleen vaststaat dat het moment verstreek zonder `last_fired`. Tegenvoorbeeld: een wekker die na dat moment is aangemaakt, meldt dit bij de eerstvolgende herstart. Voorstel: *"…is niet afgegaan; Home Assistant heeft dat moment gemist."* | SPEC 11.7 | **eigenaar**, woordkeuze |
+| **Shuffle wordt na de wekker NIET teruggezet**, terwijl het volume dat wél wordt (SPEC 9.5) en met precies dezelfde motivatie: geen bijwerking die de klant niet vroeg. Gemeten in fase 6: na een afspeellijst-wekker stond `shuffle` op de speaker nog op `true`. Niet gebouwd — het is een uitbreiding van de opdracht en kost een extra lezing plus een aanroep in het stoppad | `afvuren.py` / SPEC 9.5, 9.6 | **beslissing van de eigenaar** |
 | **De waarschuwing bij een eindig geluid blijft weg bij een BESTAANDE wekker.** `endless` komt uit `sound/search` en staat niet in de opslag — het is een eigenschap van de provider, niet van de keuze (SPEC 15.6). Wie hem ook wil zien bij het openen van een oude wekker, moet `endless` in de opslag zetten of `alarms/get` het laten meesturen. Aanvaard in fase 4c | SPEC 8.2 / 15.1 | **eigenaar**, als hij het mist |
 | **De provider-as van `endless` is niet live aangetoond**, alleen de soort-as: er is geen streamingprovider op deze instance (fase 0b). Unittests dekken het paar `spotify`/`somafm` op dezelfde soort | `radiomodus.py` | de eigenaar toetst het op zijn eigen HA |
 | **De tijdkiezer is niet op iOS of Android getoetst.** SPEC 5.2 eist alle drie de platformen. Gemeten is dat `<input type="time">` op desktop met toetsen én kliks werkt en dat `ha-time-input` op het dashboard **niet geladen** is (valkuil 50). Een echt apparaat is nodig | de editor | **eigenaar toetst dit op zijn telefoon** |
@@ -918,7 +1008,7 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | `getCardSize()` bestaat sinds 4a (1 per rij + 1, en 3 in de stoptoestand) maar is **niet in een masonry-weergave nagemeten**; het dashboard staat in sections-weergave zoals SPEC 20.1 punt 2 voorschrijft | de kaart | 4b of later |
 | `panel: true` niet aangeraakt (`frontend#52570`); voor de stoptoestand inmiddels een vastgelegde beperking (SPEC 20.1 punt 2) | de kaart | 4b of later |
 | **De kaart moet een zoekresultaat uitkleden** vóór `alarms/save`: `album` en `artists` worden geweigerd (valkuil 39) | de editor | **4b** |
-| **Album, artiest en los nummer zijn nooit live getoetst** — geen streamingprovider op deze instance (fase 0b, T3). De editor moet er wél mee omgaan, en de waarschuwing uit SPEC 8.3.1 hoort juist bij die soorten | de editor | **4b**, en de eigenaar toetst het op zijn eigen HA |
+| **Album, artiest en los nummer zijn nooit live AFGESPEELD.** Sinds fase 6 zijn ze wél te **kiezen** en te **zoeken** via MA's `test`-provider (valkuil 54), maar `get_album_tracks` is daar niet geïmplementeerd, dus een album geeft `NotImplementedError`. `playlist` speelt wél en is de basis van de shuffle-meting. Artiest is alleen in Node-tests afgedekt | de editor / `shuffle.py` | de eigenaar toetst het op zijn eigen HA |
 
 Bij de twee kaartpunten in die tabel: `panel: true` staat in DomotiApp Scene als
 openstaand punt (`frontend#52570`) en raakt juist kiosk-opstellingen. Voor de

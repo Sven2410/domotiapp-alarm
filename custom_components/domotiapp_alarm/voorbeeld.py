@@ -156,6 +156,12 @@ async def async_start(
 
     await afvuren.async_zet_volume(hass, speaker, volume_pct)
 
+    # 6. Shuffle, net als bij het afgaan (SPEC 9.6) en om dezelfde reden vóór
+    #    `play_media`. Een voorbeeld dat altijd met nummer 1 begint terwijl de
+    #    wekker schudt, laat iets anders horen dan wat er 's ochtends gebeurt —
+    #    en dan is het geen voorbeeld.
+    await afvuren.async_zet_shuffle(hass, speaker, (geluid or {}).get("media_type"))
+
     try:
         await hass.services.async_call(
             "music_assistant",
