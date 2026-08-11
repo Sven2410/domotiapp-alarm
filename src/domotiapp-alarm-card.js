@@ -1,10 +1,11 @@
 /**
  * DomotiApp Alarm — de kaart in rusttoestand en in de stoptoestand.
  *
- * Fase 4a bouwt SPEC 3, 4 en 16: de lijst met wekkers, de schakelaar, het
+ * Fase 4a bouwde SPEC 3, 4 en 16: de lijst met wekkers, de schakelaar, het
  * overloopmenu, de melding met "Begrepen", en de kaart die zichzelf in één
- * grote stopknop verandert zodra er een wekker afgaat. De **editor** (SPEC 5)
- * is fase 4b; de plusknop staat er wel en zegt dat.
+ * grote stopknop verandert zodra er een wekker afgaat. Fase 4b hangt daar de
+ * **editor** (SPEC 5) aan, achter de plusknop en achter een tik op een rij; die
+ * staat in `src/editor.js`.
  *
  * ## Wat hier bewust niet gebeurt
  *
@@ -14,9 +15,13 @@
  * - **De kaart sorteert niet.** `alarms/get` levert de lijst al gesorteerd
  *   volgens SPEC 3.4.
  * - **De kaart pollt niet.** Dat er een wekker afgaat komt via
- *   `ringing/subscribe` (SPEC 15.9), en bij het openen meteen uit het veld
+ *   `updates/subscribe` (SPEC 15.9), en bij het openen meteen uit het veld
  *   `ringing` van `alarms/get` — zodat een kaart die opengaat terwijl de wekker
  *   al loopt niet op een gebeurtenis hoeft te wachten die al voorbij is.
+ *   Sinds fase 4b meldt datzelfde abonnement óók **opslagwijzigingen**, zodat
+ *   een wekker die op de telefoon wordt gewijzigd op het wandtablet verschijnt
+ *   zonder herlaadbeurt. Elk bericht betekent hetzelfde: haal de toestand
+ *   opnieuw op.
  *
  * ## Waarom er nauwelijks HA-componenten in zitten
  *
@@ -45,7 +50,9 @@ import {
   CMD,
   DOCS_URL,
   EDITOR_TYPE,
+  WEKKER_EDITOR_TYPE,
 } from "./const.js";
+import { DomotiappAlarmEditor } from "./editor.js";
 import {
   foutTekst,
   personToestand,
@@ -64,9 +71,6 @@ import {
 
 const VERSION = __CARD_VERSION__;
 
-/** Tijdelijke melding achter de plusknop; de editor is fase 4b. */
-const TEKST_EDITOR_KOMT_NOG =
-  "De editor komt in fase 4b. Zet je wekkers voorlopig via de WebSocket-API.";
 
 /**
  * Iconen als inline SVG in plaats van `ha-icon`. Zie de kop van dit bestand:
@@ -98,6 +102,8 @@ class DomotiappAlarmCard extends LitElement {
     _bevestigVoor: { state: true },
     _bezig: { state: true },
     _tijdelijkeMelding: { state: true },
+    _editorVoor: { state: true },
+    _entiteiten: { state: true },
   };
 
   constructor() {
@@ -108,6 +114,10 @@ class DomotiappAlarmCard extends LitElement {
     this._bevestigVoor = null;
     this._bezig = false;
     this._tijdelijkeMelding = null;
+    // `undefined` = dicht. `null` = open voor een nieuwe wekker. Een object =
+    // open voor die bestaande wekker (SPEC 5).
+    this._editorVoor = undefined;
+    this._entiteiten = null;
     /** De persoon waarvoor het huidige abonnement loopt. */
     this._abonnementVoor = null;
     this._afmelden = null;
@@ -303,6 +313,34 @@ class DomotiappAlarmCard extends LitElement {
     }
   }
 
+  /**
+   * Open de editor (SPEC 5). `wekker` is `null` voor een nieuwe.
+   *
+   * De gelabelde speakers en lampen worden hier opgehaald en niet in de editor:
+   * dan is er één plek die weet wanneer die lijst verouderd is, en de editor
+   * krijgt hem als gewone eigenschap binnen.
+   */
+  async _openEditor(wekker) {
+    this._menuVoor = null;
+    this._bevestigVoor = null;
+    this._editorVoor = wekker;
+    if (!this.hass) {
+      return;
+    }
+    try {
+      this._entiteiten = await this.hass.callWS({ type: CMD.entities });
+    } catch (fout) {
+      // Geen lijst is geen reden om de editor niet te openen: SPEC 7.4 zegt
+      // uitdrukkelijk dat de gebruiker mag zien wáárom het niet gaat.
+      this._entiteiten = null;
+      console.warn(`${CARD_TYPE}: entiteitenlijst ophalen mislukt: ${fout?.message ?? fout}`);
+    }
+  }
+
+  _sluitEditor() {
+    this._editorVoor = undefined;
+  }
+
   /** Een korte melding in de kaart zelf, zonder afhankelijkheid van HA's toast. */
   _toon(tekst) {
     this._tijdelijkeMelding = tekst;
@@ -413,6 +451,21 @@ class DomotiappAlarmCard extends LitElement {
       gap: 12px;
       padding: 12px 16px;
       border-bottom: 1px solid var(--divider-color);
+    }
+    button.tikvlak {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+      border: none;
+      background: none;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      color: inherit;
     }
     .tijd {
       font-size: 28px;
@@ -633,7 +686,25 @@ class DomotiappAlarmCard extends LitElement {
       return this._mededeling("Wekkers ophalen…", false);
     }
 
+    // De editor vervangt de lijst zolang hij open is (SPEC 5: een eigen
+    // formulier ín de kaart, geen pop-up). Een afgaande wekker wint: dan hoort
+    // de kaart een stopknop te zijn en niet een formulier.
     const stop = this._stop();
+    if (this._editorVoor !== undefined && !stop) {
+      return html`<ha-card>
+        <domotiapp-alarm-editor
+          .hass=${this.hass}
+          .person=${this._config.person}
+          .wekker=${this._editorVoor}
+          .entiteiten=${this._entiteiten}
+          @editor-dicht=${() => this._sluitEditor()}
+          @editor-opgeslagen=${(e) => {
+            this._toestand = e.detail.toestand;
+            this._sluitEditor();
+          }}
+        ></domotiapp-alarm-editor>
+      </ha-card>`;
+    }
     return html`<ha-card>
       ${this._menuVoor
         ? html`<div
@@ -690,7 +761,7 @@ class DomotiappAlarmCard extends LitElement {
           class="icoonknop"
           title="Wekker toevoegen"
           aria-label="Wekker toevoegen"
-          @click=${() => this._toon(TEKST_EDITOR_KOMT_NOG)}
+          @click=${() => this._openEditor(null)}
         >
           ${svg(ICOON_PLUS)}
         </button>
@@ -703,11 +774,18 @@ class DomotiappAlarmCard extends LitElement {
     const aan = Boolean(wekker.enabled);
     return html`
       <div class="rij ${aan ? "" : "uit"}">
-        <div class="tijd">${wekker.time}</div>
-        <div class="tekst">
-          <div class="naam">${wekker.name}</div>
-          <div class="sub">${subtitel(wekker, nu)}</div>
-        </div>
+        <button
+          class="tikvlak"
+          type="button"
+          aria-label="Wekker ${wekker.name} bewerken"
+          @click=${() => this._openEditor(wekker)}
+        >
+          <div class="tijd">${wekker.time}</div>
+          <div class="tekst">
+            <div class="naam">${wekker.name}</div>
+            <div class="sub">${subtitel(wekker, nu)}</div>
+          </div>
+        </button>
         <button
           class="schakelaar"
           role="switch"
@@ -862,6 +940,7 @@ registreerWanneerGereed({
   definities: [
     [CARD_TYPE, DomotiappAlarmCard],
     [EDITOR_TYPE, DomotiappAlarmCardEditor],
+    [WEKKER_EDITOR_TYPE, DomotiappAlarmEditor],
   ],
   waarschuw: (bericht) => console.warn(`${CARD_TYPE}: ${bericht}`),
 });

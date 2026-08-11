@@ -1,4 +1,4 @@
-"""De tien WebSocket-commando's (SPEC 15).
+"""De elf WebSocket-commando's (SPEC 15).
 
 **Geen enkel commando is admin-only** (SPEC 17). Dat is een bewuste keuze: klanten
 draaien Fully Kiosk met een niet-admin account en juist zij moeten hun wekkers
@@ -24,7 +24,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
-from . import afvuren, entiteiten, planner, ringing
+from . import abonnement, afvuren, entiteiten, planner, voorbeeld
 from .const import (
     DATA_STORE,
     DATA_WS_REGISTERED,
@@ -33,6 +33,8 @@ from .const import (
     SEARCH_LIMIT_DEFAULT,
     SEARCH_LIMIT_MAX,
     SEARCH_TIMEOUT_SECONDEN,
+    VOLUME_PCT_MAX,
+    VOLUME_PCT_MIN,
 )
 from .store import (
     AlarmStore,
@@ -59,8 +61,11 @@ TYPE_SKIP_NEXT = f"{DOMAIN}/alarms/skip_next"
 TYPE_SEARCH = f"{DOMAIN}/sound/search"
 TYPE_ENTITIES = f"{DOMAIN}/entities/list"
 TYPE_STOP = f"{DOMAIN}/alarms/stop"
-TYPE_SUBSCRIBE = f"{DOMAIN}/ringing/subscribe"
+# Fase 4b: hernoemd van `ringing/subscribe`. Het abonnement gaat niet meer alleen
+# over afgaan maar over alles wat een open kaart actueel houdt (SPEC 15.9).
+TYPE_SUBSCRIBE = f"{DOMAIN}/updates/subscribe"
 TYPE_CLEAR_MESSAGE = f"{DOMAIN}/alarms/clear_message"
+TYPE_PREVIEW = f"{DOMAIN}/preview/start"
 
 # De acht emmers die music_assistant.search teruggeeft (SPEC 8.1). De volgorde
 # hier is de volgorde in het antwoord: afspeellijsten en radio eerst, want dat is
@@ -121,7 +126,7 @@ def _toestand(hass: HomeAssistant, person_entity_id: str) -> dict[str, Any]:
     wekkers = sorteer(store.wekkers(registry_id))
     nu = dt_util.now()
     volgende = volgende_wekker(wekkers, nu)
-    register = ringing.register_van(hass)
+    register = abonnement.register_van(hass)
     return {
         "alarms": wekkers,
         "next_fire": (
@@ -272,14 +277,14 @@ async def _handle_set_enabled(hass, connection, msg) -> None:
 @_fout_omzetten
 async def _handle_delete(hass, connection, msg) -> None:
     registry_id = registry_id_van_person(hass, msg["person"])
-    register = ringing.register_van(hass)
+    register = abonnement.register_van(hass)
 
     # Loopt de wekker nu, dan wordt hij eerst gestopt (SPEC 15.4). Zonder dat
     # blijft er geluid draaien voor een wekker die niet meer bestaat. Het
     # daadwerkelijke stoppen — geluid, oploop, volume terugzetten — zit in fase 3b;
     # hier verdwijnt hij uit het register en gaat het bericht eruit.
     await afvuren.async_stop_afgaan(
-        hass, registry_id, msg["person"], msg["alarm_id"], ringing.REASON_DELETED
+        hass, registry_id, msg["person"], msg["alarm_id"], abonnement.REASON_DELETED
     )
 
     if not await _store(hass).async_verwijder_wekker(registry_id, msg["alarm_id"]):
@@ -446,12 +451,12 @@ async def _handle_stop(hass, connection, msg) -> None:
     """
     registry_id = registry_id_van_person(hass, msg["person"])
     await afvuren.async_stop_afgaan(
-        hass, registry_id, msg["person"], msg["alarm_id"], ringing.REASON_USER
+        hass, registry_id, msg["person"], msg["alarm_id"], abonnement.REASON_USER
     )
     connection.send_result(msg["id"], _toestand(hass, msg["person"]))
 
 
-# --- 15.9 ringing/subscribe --------------------------------------------
+# --- 15.9 updates/subscribe --------------------------------------------
 
 
 @websocket_api.websocket_command(
@@ -459,7 +464,16 @@ async def _handle_stop(hass, connection, msg) -> None:
 )
 @callback
 def _handle_subscribe(hass, connection, msg) -> None:
-    """Abonneer op afgaan-gebeurtenissen (SPEC 15.9)."""
+    """Abonneer op alles wat een open kaart actueel houdt (SPEC 15.9).
+
+    Vier soorten berichten: `started`, `stopped`, `failed` en — sinds fase 4b —
+    `changed`. Eén abonnement en niet twee, zodat de kaart één codepad heeft:
+    elk bericht betekent "haal de toestand opnieuw op", en alleen `started` en
+    `stopped` doen daarnaast nog iets met de stopknop.
+
+    Het `changed`-bericht komt uit de opslaglaag en niet uit de commando's; zie
+    de moduledocstring van `abonnement.py` voor waarom dat het verschil maakt.
+    """
     gewenste_persoon: str | None = msg.get("person")
 
     @callback
@@ -468,7 +482,7 @@ def _handle_subscribe(hass, connection, msg) -> None:
             return
         connection.send_message(websocket_api.event_message(msg["id"], bericht))
 
-    afmelden = ringing.register_van(hass).abonneer(doorsturen)
+    afmelden = abonnement.register_van(hass).abonneer(doorsturen)
     connection.subscriptions[msg["id"]] = afmelden
     connection.send_result(msg["id"])
 
@@ -516,6 +530,52 @@ async def _handle_clear_message(hass, connection, msg) -> None:
     connection.send_result(msg["id"], _toestand(hass, msg["person"]))
 
 
+# --- 15.11 preview/start -----------------------------------------------
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): TYPE_PREVIEW,
+        vol.Required("speaker"): cv.string,
+        vol.Required("sound"): dict,
+        vol.Required("volume_pct"): vol.All(
+            vol.Coerce(int), vol.Range(min=VOLUME_PCT_MIN, max=VOLUME_PCT_MAX)
+        ),
+    }
+)
+@websocket_api.async_response
+async def _handle_preview(hass, connection, msg) -> None:
+    """De voorbeeldknop (SPEC 5.4 en 15.11).
+
+    **Een abonnement, geen los start/stop-paar.** Het voorbeeld loopt zolang dit
+    abonnement loopt; afmelden stopt het, en een verbinding die wegvalt is
+    dezelfde afmelding. Zie de moduledocstring van `voorbeeld.py` voor waarom dat
+    de eis "elke manier van de editor sluiten stopt het voorbeeld" is die je niet
+    met een stopcommando haalt.
+
+    Alles wat kan mislukken gebeurt **vóór** `send_result`, zodat een mislukt
+    voorbeeld een gewone fout is en geen abonnement dat meteen weer stukgaat.
+    """
+    speaker: str = msg["speaker"]
+    try:
+        await voorbeeld.async_start(hass, speaker, msg["sound"], msg["volume_pct"])
+    except voorbeeld.VoorbeeldGeweigerd as fout:
+        connection.send_error(msg["id"], fout.code, str(fout))
+        return
+
+    @callback
+    def afmelden() -> None:
+        # HA roept dit synchroon aan, ook bij een weggevallen verbinding. Het
+        # stoppen zelf is async (twee service-aanroepen), dus het gaat als taak
+        # de lus in.
+        hass.async_create_task(
+            voorbeeld.async_stop(hass, speaker, reden=voorbeeld.REDEN_AFGEMELD)
+        )
+
+    connection.subscriptions[msg["id"]] = afmelden
+    connection.send_result(msg["id"])
+
+
 # --- registratie -------------------------------------------------------
 
 _COMMANDOS = (
@@ -529,12 +589,13 @@ _COMMANDOS = (
     _handle_stop,
     _handle_subscribe,
     _handle_clear_message,
+    _handle_preview,
 )
 
 
 @callback
 def async_register(hass: HomeAssistant) -> None:
-    """Registreer de tien commando's, één keer per HA-run.
+    """Registreer de elf commando's, één keer per HA-run.
 
     HA kent geen `async_unregister_command`, dus een tweede registratie zou de
     eerste overschrijven. De vlag voorkomt dat bij een tweede config entry.

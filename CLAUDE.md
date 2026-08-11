@@ -512,9 +512,40 @@ Vindplaatsen in `docs/fase-4a/RAPPORT.md`.
     Vuistregel: schrijf de tweede ronde pas nadat de eerste groen is, en richt hem op
     de regels waarvan je zou moeten toegeven dat je ze niet toetst.
 
----
+### Nieuw in fase 4b
 
-## Commando's
+Vindplaatsen in `docs/fase-4b/RAPPORT.md`.
+
+47. **Meerdere snapclients met dezelfde `hostID` leveren NUL geluid op, en het
+    ziet eruit als een productfout.** Fase 4b vond negen snapclient-processen in
+    de MA-container, meerdere met `--hostID wekker-slaapkamer`. Ze vechten om
+    dezelfde stream en dan logt élke client onafgebroken `No chunks available` —
+    terwijl HA netjes `playing` meldt en het volume klopt. De diagnose kostte
+    tijd omdat alle server-side signalen goed stonden.
+    **Tel de processen vóór je een audiometing gelooft:** `docker exec ma-alarm`
+    met een lus over `/proc/*/cmdline` (valkuil 33 — `ps` bestaat er niet).
+    `docker start` op een draaiende container laat oude `docker exec -d`-processen
+    staan, dus ze stapelen zich per sessie op.
+
+48. **`rm` op een logbestand dat een draaiend proces openhoudt, geeft geen nieuw
+    logbestand.** Het proces schrijft door naar de verwijderde inode en de
+    volgende `grep` zegt "No such file or directory". Wil je een schone meting:
+    **eerst het proces stoppen, dan het bestand weg, dan opnieuw starten** — in
+    die volgorde.
+
+49. **Een native `<select>` is met de browsertool niet te openen zonder risico.**
+    Een klik erop opent een OS-popup die dezelfde blokkade kan geven als een
+    dialoogvenster. De uitweg in fase 4b: het element **programmatisch focussen**
+    en daarna met een **echte** `ArrowDown` bedienen — dat verandert de waarde en
+    stuurt `change`, zonder popup. Meld dan wel welk deel programmatisch was, net
+    als bij valkuil 11.
+
+50. **Welke HA-component geladen is, hangt af van wat er verder op het dashboard
+    staat — en dat is per component verschillend.** Fase 4b mat op hetzelfde
+    dashboard: `ha-card` en `ha-select` bestaan, `ha-time-input` en `ha-textfield`
+    **niet**. Dat is valkuil 44 met een scherpere rand: je kunt niet uit "die ene
+    HA-component werkt" afleiden dat de volgende er ook is. Meet per component
+    met `customElements.get(...)` vóór je erop bouwt.
 
 ```bash
 npm install                # eenmalig
@@ -598,7 +629,8 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 3b | De planner: `planner.py` (plannen, inhaalslag, respijtvenster, herplannen), `afvuren.py` als naad met 3c, `meldingen.py` met de drie kanalen en de repair issues die 3a openliet. 137 Python-tests, 17 mutaties nagelopen, live gemeten afwijking 12 ms | gemerged |
 | 3c | Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py`, `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost — oorzaak was de `my`-integratie, niet `external_url`. Live: +2,153 s afwijking, oploop 1,006 s per stap, audio bewezen aan de speakerkant. Eén blokkerende bevinding, opgelost in 3c-bis | in PR #8 |
 | 3c-bis | De URI-controle vervalt (SPEC 11.2 herschreven, 11.2.1 vervallen, 11.2.2 met een nieuw criterium). De SomaFM-wekker die in 3c niet afging, gaat nu af met 0 van 87 s stilte. 212 tests, 5 mutaties. `play_media` blokkeert 2,1–2,6 s en dat is niet weg te nemen zonder de foutdetectie te verliezen (`core.py:2953-2959`) | gemerged |
-| **4a** | **De kaart in rusttoestand en de stoptoestand: lijst, schakelaar, overloopmenu, bevestiging bij verwijderen, melding met "Begrepen", en de kaart die één stopknop wordt. Twee pure modules (`weergave.js`, `kaartconfig.js`), de config-editor met `ha-form`. Een **tiende commando** `alarms/clear_message` erbij, want SPEC 11.7 vroeg een knop die SPEC 15 niet kon bedienen; SPEC 15.10/15.11 bijgewerkt met toestemming van de eigenaar. 40 JS- en 216 Python-tests, 28 mutaties (2 gaten gevonden)** | **deze ronde, PR #9** |
+| 4a | De kaart in rusttoestand en de stoptoestand: lijst, schakelaar, overloopmenu, bevestiging bij verwijderen, melding met "Begrepen", en de kaart die één stopknop wordt. Twee pure modules (`weergave.js`, `kaartconfig.js`), de config-editor met `ha-form`. Een **tiende commando** `alarms/clear_message` erbij, want SPEC 11.7 vroeg een knop die SPEC 15 niet kon bedienen; SPEC 15.10/15.11 bijgewerkt met toestemming van de eigenaar. 40 JS- en 216 Python-tests, 28 mutaties (2 gaten gevonden) | gemerged |
+| **4b** | **De editor (SPEC 5) achter de plusknop en achter een tik op een rij, met zoeken in MA, de zomertijdwaarschuwing en de voorbeeldknop. `ringing/subscribe` verbreed tot `updates/subscribe` met een `changed`-bericht uit de opslaglaag — daarmee is het openstaande punt van 4a gesloten. `preview/start` als abonnement, zodat een weggeklikt tabblad het geluid stopt (gemeten: 8,8 s). 69 JS- en 238 Python-tests, 31 mutaties in twee rondes** | **deze ronde, PR #10** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -735,9 +767,8 @@ verwerking):
 **Wat er staat na fase 4a:** de kaart in rusttoestand en de stoptoestand. Wekkers zijn
 te zien, aan en uit te zetten, over te slaan en te verwijderen; een melding is te lezen
 en weg te klikken; en gaat er een wekker af, dan wordt de hele kaart één stopknop —
-zowel terwijl hij openstaat (via `ringing/subscribe`) als bij het openen (via het veld
-`ringing` van `alarms/get`). Wat er nog niet is: **de editor** (SPEC 5) — tijdkiezer,
-zoeken in Music Assistant, speaker- en lampkiezer, voorbeeldknop. Dat is fase 4b.
+zowel terwijl hij openstaat (via `updates/subscribe`) als bij het openen (via het veld
+`ringing` van `alarms/get`).
 
 **De drie regels van de kaart die je niet mag omdraaien** (zie
 `docs/fase-4a/RAPPORT.md`):
@@ -756,18 +787,41 @@ zoeken in Music Assistant, speaker- en lampkiezer, voorbeeldknop. Dat is fase 4b
    verbergen laat hem staan op het wandtablet en zet hem terug na een herlaadbeurt.
    Daarvoor bestaat `alarms/clear_message` (SPEC 15.10).
 
-### Waar fase 4b begint
+**Wat er staat na fase 4b: het product is functioneel compleet.** De editor zit achter
+de plusknop en achter een tik op een rij, met de tijdkiezer, de herhaaldagen, het zoeken
+in Music Assistant, de speaker- en lampkiezer, de zomertijdwaarschuwing en de
+voorbeeldknop. Wat er niet meer op de lijst staat: niets uit SPEC 1 t/m 20 dat gebouwd
+moest worden. Wat er nog wél is: de openstaande punten hieronder, en er is nog **geen
+release** — versie staat op `0.1.0`.
 
-`SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **tien** commando's die de
+**De twee regels van fase 4b die je niet mag omdraaien** (zie
+`docs/fase-4b/RAPPORT.md`):
+
+1. **Het `changed`-bericht komt uit de OPSLAGLAAG, niet uit de commando's.** De vijf
+   muterende commando's zijn niet de enige schrijvers: de planner schrijft `last_fired`
+   en de inhaalslag, en `meldingen.py` schrijft `last_message`. Dat zijn juist de
+   wijzigingen die de klant niet zelf heeft aangevraagd — en dus de wijzigingen waarvan
+   hij het meest heeft dat zijn kaart ze uit zichzelf laat zien. Zet het bericht in
+   `websocket.py` en je mist precies die.
+2. **Het voorbeeld is een abonnement, en afmelden ís het stoppen.** SPEC 5.4 eist dat
+   elke manier van sluiten het voorbeeld stopt, en "elke manier" is meer dan de kaart
+   kan afvangen: een weggeklikt tabblad, een gecrashte browser, een wandtablet dat zijn
+   wifi verliest. Met een `preview/stop`-commando speelt de muziek in al die gevallen
+   door op een speaker waarvan het volume ook nog verzet is. Gemeten in fase 4b: tabblad
+   dicht → **8,8 s later** stond het volume terug.
+
+### Waar fase 5 begint
+
+`SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **elf** commando's die de
 kaart mag gebruiken; dat is de bron, niet dit bestand. Wat hieronder staat is wat je
 uit SPEC *niet* kunt lezen omdat het gemeten is.
 
-**Vier dingen die de kaart moet doen en waar je anders tegenaan loopt:**
+**Vier dingen die de kaart doet en waar je anders tegenaan loopt:**
 
 1. **Kleed een zoekresultaat uit vóór het opslaan.** `sound/search` geeft `album` en
    `artists` mee; `alarms/save` weigert die met `invalid_format` (valkuil 39). Het
    `sound`-object mag alleen `uri`, `name`, `media_type` en `image` bevatten.
-2. **Reken op drie soorten gebeurtenissen uit `ringing/subscribe`**: `started`, `stopped`
+2. **Reken op vier soorten gebeurtenissen uit `updates/subscribe`**: `started`, `stopped`
    (met `reason` `user`/`timeout`/`deleted`) en `failed` (met `reason` = de meldingssoort
    en een `text`). Alle drie zijn live gezien in fase 3c.
 3. **Toon `last_message` op kleur en toon van `severity`**, niet op `kind`. `error` en
@@ -775,12 +829,15 @@ uit SPEC *niet* kunt lezen omdat het gemeten is.
 4. **`getGridOptions` moet `rows: "auto"` teruggeven** (valkuil 12). Een wekkerkaart
    verandert van hoogte, dus een vast getal laat hem over de "+"-knop lopen.
 
-Punt 1, 3 en 4 zijn in fase 4a gebouwd en gemeten; ze staan hier omdat de **editor** ze
-opnieuw nodig heeft. Punt 2 is in 4a alleen voor `started` en `failed` live gezien —
-`stopped` kwam er als antwoord van `alarms/stop` en niet als event.
+Alle vier zijn in fase 4a en 4b gebouwd en gemeten. Punt 2 telt sinds 4b **vier**
+soorten: `changed` is erbij gekomen, en de kaart behandelt elk bericht hetzelfde —
+haal de toestand opnieuw op.
 
 **Een dashboard om in te meten staat klaar:** `/fase-4a/0` (sections-weergave, de kaart
 op `person.dev`) en `/fase-4a/spec163` met de drie gevallen van SPEC 16.3 naast elkaar.
+
+**En let op de testrig**: tel de snapclients vóór je een audiometing gelooft
+(valkuil 47). Er hoort er **één per hostID** te draaien.
 
 **En bij het meten in de browser:** valkuil 37 (een vastgehouden `hass` leest een bevroren
 `states`-snapshot) heeft in fase 3c een geslaagde toets als mislukt laten lijken. Haal
@@ -808,7 +865,10 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
 | **De volume-oploop begint 2,1–2,6 s te laat** doordat `play_media` blokkeert tot MA de stream heeft opgezet. Niet-blokkerend aanroepen kan niet: `core.py:2953-2959` vangt de exceptie binnen HA af, en dan vervallen de `radio_mode`-terugval én de foutmelding. De oploop eerder starten verandert SPEC 9.1 en de betekenis van het `started`-event. **Aanbeveling die niet gebouwd is:** de oploop laten *inhalen* — begin op de stap die bij de verstreken tijd hoort. Meting ligt vast in SPEC 20.1 punt 9 | `afvuren.py` / SPEC 9.1, 9.3 | **beslissing van de eigenaar** |
 | **De tekst van SPEC 11.7 bij `sound_gone` stelt het zekerder dan de code weet**: "het gekozen geluid bestaat niet meer" terwijl er alleen vaststaat dat het niet startte. De soort is juist, de formulering claimt te veel. `"kon niet gestart worden"` zou nauwkeuriger zijn | SPEC 11.7 | **eigenaar**, woordkeuze |
-| **De kaart ziet wijzigingen van buiten zichzelf niet.** Elk commando geeft de volledige toestand terug (SPEC 15.2), dus de kaart die zélf iets doet blijft actueel — maar SPEC 15 kent **geen abonnement op opslagwijzigingen**, alleen op `ringing`. Een wekker die op de telefoon wordt gewijzigd verschijnt op het wandtablet pas als dat dashboard opnieuw opengaat. Gemeten in fase 4a. Met een editor erbij (4b) wordt dit merkbaar. Vraagt een elfde commando of een uitbreiding van `ringing/subscribe` | SPEC 15 / de kaart | **beslissing van de eigenaar, vóór of tijdens 4b** |
+| **De waarschuwing bij een geluid met eindige duur is te ruim.** SPEC 8.3.1 beperkt hem tot providers zonder `SIMILAR_TRACKS`; de kaart kan dat niet weten, want de providerlijst staat server-side in `const.py` en `sound/search` geeft niet terug of `radio_mode` meegestuurd zou worden. De editor waarschuwt daarom bij **elke** eindige soort — hinderlijk waar het onnodig is, en dat is de goede kant om fout te zitten. **Oplossing: één veld `radio_mode` per treffer** in het antwoord van `sound/search` | SPEC 15.6 / `editorlogica.js` | **eigenaar**, kleine SPEC-wijziging |
+| **Twee van de drie meldingen uit SPEC 7.4 zijn niet te onderscheiden.** `entities/list` geeft `label_exists` plus de overgebleven entiteiten, dus "label bestaat maar is leeg" en "alles viel af op de eisen van 7.2" leveren allebei een lege lijst op. De editor toont één tekst die beide dekt in plaats van er één te kiezen en soms te liegen. **Oplossing: een `filtered_out`-telling** in het antwoord | SPEC 15.7 / `editorlogica.js` | **eigenaar**, kleine SPEC-wijziging |
+| **De tijdkiezer is niet op iOS of Android getoetst.** SPEC 5.2 eist alle drie de platformen. Gemeten is dat `<input type="time">` op desktop met toetsen én kliks werkt en dat `ha-time-input` op het dashboard **niet geladen** is (valkuil 50). Een echt apparaat is nodig | de editor | **eigenaar toetst dit op zijn telefoon** |
+| **De time-out van `sound/search` is nooit opgetreden in een meting.** De tekst uit SPEC 15.6 wordt server-side gezet en door de editor getoond, maar RadioBrowser was deze ronde snel | `websocket.py` / de editor | bij gelegenheid |
 | `getCardSize()` bestaat sinds 4a (1 per rij + 1, en 3 in de stoptoestand) maar is **niet in een masonry-weergave nagemeten**; het dashboard staat in sections-weergave zoals SPEC 20.1 punt 2 voorschrijft | de kaart | 4b of later |
 | `panel: true` niet aangeraakt (`frontend#52570`); voor de stoptoestand inmiddels een vastgelegde beperking (SPEC 20.1 punt 2) | de kaart | 4b of later |
 | **De kaart moet een zoekresultaat uitkleden** vóór `alarms/save`: `album` en `artists` worden geweigerd (valkuil 39) | de editor | **4b** |

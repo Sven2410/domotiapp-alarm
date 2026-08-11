@@ -28,6 +28,7 @@ DATA_STORE: Final = "store"
 DATA_WS_REGISTERED: Final = "ws_registered"
 DATA_RINGING: Final = "ringing"
 DATA_PLANNER: Final = "planner"
+DATA_VOORBEELD: Final = "voorbeeld"
 
 # --- Opslag (SPEC 14.1) -------------------------------------------------
 STORAGE_KEY: Final = f"{DOMAIN}.alarms"
@@ -117,6 +118,12 @@ BRIGHTNESS_PCT_MAX: Final = 100
 # ISO-weekdagen: 1 = maandag t/m 7 = zondag.
 WEEKDAG_MIN: Final = 1
 WEEKDAG_MAX: Final = 7
+
+# --- De voorbeeldknop (SPEC 5.4 en 15.11) -------------------------------
+# Een voorbeeld stopt hoe dan ook na zoveel minuten. Een abonnement leeft zolang
+# de verbinding leeft, en een browsertabblad dat openblijft op een editor kan
+# dagen leven. **VOORSTEL**: SPEC 5.4 legt geen maximum vast.
+VOORBEELD_MAX_MINUTEN: Final = 5
 
 # Zoekopdracht (SPEC 15.6).
 SEARCH_LIMIT_DEFAULT: Final = 10

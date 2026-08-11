@@ -34,7 +34,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.domotiapp_alarm import afvuren, meldingen
 from custom_components.domotiapp_alarm import planner as planner_mod
-from custom_components.domotiapp_alarm import ringing
+from custom_components.domotiapp_alarm import abonnement
 from custom_components.domotiapp_alarm.const import (
     DATA_PLANNER,
     DATA_STORE,

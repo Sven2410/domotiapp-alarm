@@ -38,6 +38,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.util import uuid as uuid_util
 
+from . import abonnement
 from .const import (
     STORAGE_KEY,
     STORAGE_MINOR_VERSION,
@@ -208,11 +209,29 @@ class AlarmStore:
             personen[rid] = rauw
         return {"persons": personen}
 
-    async def _async_schrijf(self) -> None:
+    async def _async_schrijf(self, gewijzigd_voor: str | None = None) -> None:
+        """Schrijf weg, en meld de wijziging aan de abonnees (SPEC 15.9).
+
+        **Dit is het enige knooppunt waar élke opslagwijziging langskomt**, en
+        daarom staat het bericht hier en niet in `websocket.py`. Behalve de vijf
+        muterende commando's schrijven ook de planner (`last_fired`, de
+        inhaalslag) en `meldingen.py` (`last_message`) hierlangs, en dat zijn
+        precies de wijzigingen die de klant niet zelf heeft aangevraagd — dus de
+        wijzigingen waarvan hij het meest heeft dat zijn kaart ze uit zichzelf
+        laat zien.
+
+        Het bericht gaat er **ná** het wegschrijven uit. Faalt het schrijven, dan
+        gooit `async_save` en is er niets gemeld — een kaart die dan `alarms/get`
+        zou doen, zou een toestand ophalen die niet op schijf staat.
+        """
         if self._onbruikbaar is not None:
             # Geval C: niet schrijven. Zou de hele inhoud weggooien.
             raise OpslagOnbruikbaar(self._onbruikbaar)
         await self._store.async_save(self._as_stored())
+        if gewijzigd_voor is not None:
+            abonnement.stuur_gewijzigd(
+                self.hass, person_entity_id_van_registry_id(self.hass, gewijzigd_voor)
+            )
 
     async def async_zet_wekker(
         self, registry_id: str, wekker: dict[str, Any]
@@ -230,7 +249,7 @@ class AlarmStore:
                 break
         else:
             wekkers.append(wekker)
-        await self._async_schrijf()
+        await self._async_schrijf(gewijzigd_voor=registry_id)
         return wekker
 
     async def async_verwijder_wekker(self, registry_id: str, alarm_id: str) -> bool:
@@ -243,7 +262,7 @@ class AlarmStore:
         persoon["alarms"] = [w for w in persoon["alarms"] if w["id"] != alarm_id]
         if len(persoon["alarms"]) == voor:
             return False
-        await self._async_schrijf()
+        await self._async_schrijf(gewijzigd_voor=registry_id)
         return True
 
     async def async_werk_velden_bij(
@@ -264,7 +283,7 @@ class AlarmStore:
                 continue
             samengevoegd = {**bestaand, **velden}
             persoon["alarms"][index] = valideer_persoon({"alarms": [samengevoegd]})["alarms"][0]
-            await self._async_schrijf()
+            await self._async_schrijf(gewijzigd_voor=registry_id)
             return persoon["alarms"][index]
         return None
 
@@ -329,3 +348,23 @@ def registry_id_van_person(hass: HomeAssistant, entity_id: str) -> str:
     if entry is None:
         raise PersonNietGevonden(f"{entity_id} heeft geen entity registry entry")
     return entry.id
+
+
+def person_entity_id_van_registry_id(hass: HomeAssistant, registry_id: str) -> str | None:
+    """De omgekeerde vertaling, voor het `changed`-bericht (SPEC 15.9).
+
+    De opslag is per registry-entry-ID; de kaart praat in entity-ID's. Het bericht
+    moet dus terugvertaald worden.
+
+    `None` betekent: er is geen `person.`-entiteit meer met dit registry-entry.
+    Dat is een bestaande toestand en geen fout — de wekkers van een verwijderde
+    persoon blijven in de opslag staan (SPEC 18.1).
+
+    Er is geen index op registry-entry-ID, dus dit is een lus. Dat is hier
+    aanvaardbaar: het aantal `person.`-entiteiten in een huishouden is klein en
+    de lus draait alleen bij een schrijfronde, niet bij het lezen.
+    """
+    for entry in er.async_get(hass).entities.values():
+        if entry.id == registry_id and entry.domain == PERSON_DOMAIN:
+            return entry.entity_id
+    return None

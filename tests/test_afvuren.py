@@ -36,7 +36,7 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from custom_components.domotiapp_alarm import afvuren, meldingen, ringing
+from custom_components.domotiapp_alarm import afvuren, meldingen, abonnement
 from custom_components.domotiapp_alarm.const import (
     DATA_STORE,
     DOMAIN,
@@ -140,7 +140,7 @@ async def zet_op(
         registry_id, ALARM_ID, {"last_fired": None, "last_message": None}
     )
     huis.aanroepen.clear()
-    ringing.register_van(hass).actief.clear()
+    abonnement.register_van(hass).actief.clear()
     return registry_id, huis
 
 
@@ -176,6 +176,21 @@ def bericht(hass: HomeAssistant, registry_id: str) -> dict[str, Any] | None:
 # =======================================================================
 # 1. De volgorde (SPEC 9.1)
 # =======================================================================
+
+
+
+def _ringing(gebeurtenissen: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Alleen de afgaan-gebeurtenissen, zonder `changed`.
+
+    Sinds fase 4b stuurt de **opslaglaag** een `changed`-bericht na elke
+    geslaagde schrijfronde (SPEC 15.9), en het afvuren schrijft twee keer:
+    `last_fired` vooraf en bij een mislukking `last_message`. Die berichten
+    horen daar te zijn — dat is precies het gat dat fase 4a vond — maar deze
+    tests gaan over het afgaan zelf. Dat `changed` er óók uitgaat, is het
+    onderwerp van `test_abonnement.py`.
+    """
+    return [g for g in gebeurtenissen if g["event"] != abonnement.EVENT_CHANGED]
+
 
 
 async def test_de_acht_stappen_gebeuren_in_de_voorgeschreven_volgorde(
@@ -227,7 +242,7 @@ async def test_het_volume_wordt_gelezen_voordat_het_op_nul_gaat(
 
     await vuur(hass, registry_id)
 
-    context = ringing.register_van(hass).actief[(registry_id, ALARM_ID)]
+    context = abonnement.register_van(hass).actief[(registry_id, ALARM_ID)]
     assert context[afvuren.CTX_VOLUME_VOOR] == 50
 
 
@@ -243,7 +258,7 @@ async def test_de_stoptimer_en_de_tweede_noodrem_worden_gezet(
 
     await vuur(hass, registry_id)
 
-    context = ringing.register_van(hass).actief[(registry_id, ALARM_ID)]
+    context = abonnement.register_van(hass).actief[(registry_id, ALARM_ID)]
     assert context[afvuren.CTX_UNSUB_NOODREM] is not None
     assert context[afvuren.CTX_UNSUB_STOP] is not None
     assert context[afvuren.CTX_OPLOOP] is not None
@@ -270,7 +285,7 @@ async def test_een_onbereikbare_speaker_laat_de_wekker_niet_afgaan(
     await vuur(hass, registry_id)
 
     assert huis.aanroepen == []
-    assert not ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert not abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
 
     melding = bericht(hass, registry_id)
     assert melding["kind"] == meldingen.KIND_SPEAKER_UNAVAILABLE
@@ -296,13 +311,13 @@ async def test_een_mislukte_wekker_stuurt_het_failed_event(
     """
     registry_id, _ = await zet_op(hass, hass_storage, beschikbaar=False)
     gebeurtenissen: list[dict[str, Any]] = []
-    ringing.register_van(hass).abonneer(gebeurtenissen.append)
+    abonnement.register_van(hass).abonneer(gebeurtenissen.append)
 
     await vuur(hass, registry_id)
 
-    assert len(gebeurtenissen) == 1
-    gebeurtenis = gebeurtenissen[0]
-    assert gebeurtenis["event"] == ringing.EVENT_FAILED
+    assert len(_ringing(gebeurtenissen)) == 1
+    gebeurtenis = _ringing(gebeurtenissen)[0]
+    assert gebeurtenis["event"] == abonnement.EVENT_FAILED
     assert gebeurtenis["person"] == PERSON_ENTITY_ID
     assert gebeurtenis["alarm_id"] == ALARM_ID
     assert gebeurtenis["reason"] == meldingen.KIND_SPEAKER_UNAVAILABLE
@@ -319,11 +334,11 @@ async def test_een_geslaagde_wekker_stuurt_geen_failed_event(
     """
     registry_id, _ = await zet_op(hass, hass_storage)
     gebeurtenissen: list[dict[str, Any]] = []
-    ringing.register_van(hass).abonneer(gebeurtenissen.append)
+    abonnement.register_van(hass).abonneer(gebeurtenissen.append)
 
     await vuur(hass, registry_id)
 
-    assert [g["event"] for g in gebeurtenissen] == [ringing.EVENT_STARTED]
+    assert [g["event"] for g in _ringing(gebeurtenissen)] == [abonnement.EVENT_STARTED]
 
 
 async def test_zonder_music_assistant_meldt_de_wekker_dat_en_niet_de_speaker(
@@ -372,7 +387,7 @@ async def test_er_wordt_geen_uri_controle_meer_gedaan(
 
     assert "music_assistant.search" not in huis.namen()
     assert "music_assistant.play_media" in huis.namen()
-    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     assert bericht(hass, registry_id) is None
 
 
@@ -405,7 +420,7 @@ async def test_een_somafm_wekker_gaat_af(hass: HomeAssistant, hass_storage: dict
 
     data = dict(huis.aanroepen)["music_assistant.play_media"]
     assert data["media_id"] == "somafm://radio/beatblender"
-    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     assert bericht(hass, registry_id) is None
 
 
@@ -428,7 +443,7 @@ async def test_een_traag_antwoord_van_ma_houdt_de_wekker_niet_meer_op(
     await vuur(hass, registry_id)
 
     assert "music_assistant.search" not in huis.namen()
-    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     assert bericht(hass, registry_id) is None
 
 
@@ -454,7 +469,7 @@ async def test_een_mislukt_afspelen_meldt_het_geluid_en_niet_de_speaker(
     assert melding["kind"] == meldingen.KIND_SOUND_GONE
     assert melding["severity"] == "error"
     assert "SomaFM: Beat Blender" in melding["text"]
-    assert not ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert not abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
 
 
 # =======================================================================
@@ -480,7 +495,7 @@ async def test_een_speaker_die_wegvalt_na_het_starten_wordt_gemeld(
     assert bericht(hass, registry_id) is None
 
     gebeurtenissen: list[dict[str, Any]] = []
-    ringing.register_van(hass).abonneer(gebeurtenissen.append)
+    abonnement.register_van(hass).abonneer(gebeurtenissen.append)
 
     huis.laat_speaker_wegvallen()
     await tik(hass, NOODREM_NA_SECONDEN + 0.5)
@@ -488,11 +503,11 @@ async def test_een_speaker_die_wegvalt_na_het_starten_wordt_gemeld(
     melding = bericht(hass, registry_id)
     assert melding["kind"] == meldingen.KIND_SPEAKER_LOST_DURING_PLAY
     assert "mogelijk niet hoorbaar geweest" in melding["text"]
-    assert [g["event"] for g in gebeurtenissen] == [ringing.EVENT_FAILED]
+    assert [g["event"] for g in _ringing(gebeurtenissen)] == [abonnement.EVENT_FAILED]
 
     # En de wekker blijft afgaan: SPEC 11.3 vraagt om controleren, niet om afbreken.
     # De kaart hoort een stopknop te blijven, want het volume moet nog terug.
-    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
 
 
 async def test_een_speaker_die_blijft_staan_levert_geen_melding_op(
@@ -622,7 +637,7 @@ async def test_de_oploop_stopt_als_de_wekker_gestopt_wordt(
     await tik(hass, OPLOOP_STAP_SECONDEN + 0.1)
 
     await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
     )
     na_stop = list(huis.volumes())
     await draai_oploop_af(hass)
@@ -651,7 +666,7 @@ async def test_een_tik_op_een_wekker_die_niet_meer_afgaat_zet_geen_volume(
     """
     registry_id, huis = await zet_op(hass, hass_storage)
     await vuur(hass, registry_id)
-    register = ringing.register_van(hass)
+    register = abonnement.register_van(hass)
     loop = register.actief[(registry_id, ALARM_ID)][afvuren.CTX_OPLOOP]
 
     # Eén stap laten lopen, zodat het volume van de speaker gelijk is aan wat de oploop
@@ -691,12 +706,12 @@ async def test_een_speaker_die_geen_volume_aanneemt_gaat_af_zonder_oploop(
     await vuur(hass, registry_id)
 
     assert "music_assistant.play_media" in huis.namen()
-    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     melding = bericht(hass, registry_id)
     assert melding["kind"] == meldingen.KIND_VOLUME_RAMP_UNAVAILABLE
     # Er is geprobeerd op 0 én op het ingestelde niveau te zetten; beide geweigerd.
     assert huis.namen().count("media_player.volume_set") == 2
-    assert ringing.register_van(hass).actief[(registry_id, ALARM_ID)][
+    assert abonnement.register_van(hass).actief[(registry_id, ALARM_ID)][
         afvuren.CTX_OPLOOP
     ] is None
 
@@ -782,7 +797,7 @@ async def test_een_mislukte_radio_mode_wordt_opnieuw_geprobeerd_zonder(
     assert len(pogingen) == 2
     assert pogingen[0]["radio_mode"] is True
     assert "radio_mode" not in pogingen[1]
-    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     assert bericht(hass, registry_id) is None
 
 
@@ -800,7 +815,7 @@ async def test_als_het_afspelen_ook_zonder_radio_mode_faalt_gaat_de_wekker_niet_
 
     await vuur(hass, registry_id)
 
-    assert not ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert not abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     melding = bericht(hass, registry_id)
     assert melding["severity"] == "error"
     # `sound_gone` en niet `speaker_unavailable`: de speaker is bij stap 1 nog
@@ -831,7 +846,7 @@ async def test_stoppen_zet_het_volume_terug(
     huis.aanroepen.clear()
 
     assert await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
     )
 
     assert huis.namen() == ["media_player.media_stop", "media_player.volume_set"]
@@ -857,7 +872,7 @@ async def test_een_onleesbaar_oud_volume_zet_niets_terug(
     huis.aanroepen.clear()
 
     await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
     )
 
     assert huis.namen() == ["media_player.media_stop"]
@@ -876,13 +891,13 @@ async def test_de_stoptimer_stopt_de_wekker_na_dertig_minuten(
     registry_id, huis = await zet_op(hass, hass_storage)
     await vuur(hass, registry_id)
     gebeurtenissen: list[dict[str, Any]] = []
-    ringing.register_van(hass).abonneer(gebeurtenissen.append)
+    abonnement.register_van(hass).abonneer(gebeurtenissen.append)
 
     await tik(hass, STOP_NA_MINUTEN * 60 + 1)
 
-    assert not ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
-    assert [g["reason"] for g in gebeurtenissen if g["event"] == ringing.EVENT_STOPPED] == [
-        ringing.REASON_TIMEOUT
+    assert not abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert [g["reason"] for g in gebeurtenissen if g["event"] == abonnement.EVENT_STOPPED] == [
+        abonnement.REASON_TIMEOUT
     ]
     assert "media_player.media_stop" in huis.namen()
 
@@ -899,15 +914,15 @@ async def test_een_gestopte_wekker_wordt_niet_nog_eens_gestopt_door_de_timer(
     registry_id, huis = await zet_op(hass, hass_storage)
     await vuur(hass, registry_id)
     await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
     )
     huis.aanroepen.clear()
     gebeurtenissen: list[dict[str, Any]] = []
-    ringing.register_van(hass).abonneer(gebeurtenissen.append)
+    abonnement.register_van(hass).abonneer(gebeurtenissen.append)
 
     await tik(hass, STOP_NA_MINUTEN * 60 + 1)
 
-    assert gebeurtenissen == []
+    assert _ringing(gebeurtenissen) == []
     assert huis.aanroepen == []
 
 
@@ -928,11 +943,11 @@ async def test_stoppen_is_idempotent(hass: HomeAssistant, hass_storage: dict) ->
     huis.aanroepen.clear()
 
     eerste = await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
     )
     n_na_eerste = len(huis.aanroepen)
     tweede = await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
     )
 
     assert eerste is True
@@ -951,25 +966,25 @@ async def test_de_started_en_stopped_events_gaan_naar_de_abonnees(
     """
     registry_id, _ = await zet_op(hass, hass_storage)
     gebeurtenissen: list[dict[str, Any]] = []
-    ringing.register_van(hass).abonneer(gebeurtenissen.append)
+    abonnement.register_van(hass).abonneer(gebeurtenissen.append)
 
     await vuur(hass, registry_id)
     await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
     )
 
-    assert [g["event"] for g in gebeurtenissen] == [
-        ringing.EVENT_STARTED,
-        ringing.EVENT_STOPPED,
+    assert [g["event"] for g in _ringing(gebeurtenissen)] == [
+        abonnement.EVENT_STARTED,
+        abonnement.EVENT_STOPPED,
     ]
-    assert gebeurtenissen[0] == {
+    assert _ringing(gebeurtenissen)[0] == {
         "event": "started",
         "person": PERSON_ENTITY_ID,
         "alarm_id": ALARM_ID,
         "name": "Werk",
         "time": "06:45",
     }
-    assert gebeurtenissen[1]["reason"] == ringing.REASON_USER
+    assert _ringing(gebeurtenissen)[1]["reason"] == abonnement.REASON_USER
 
 
 # =======================================================================
@@ -1013,7 +1028,7 @@ async def test_een_falende_lamp_laat_de_wekker_gewoon_afgaan(
     await vuur(hass, registry_id)
 
     assert "music_assistant.play_media" in huis.namen()
-    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     melding = bericht(hass, registry_id)
     assert melding["kind"] == meldingen.KIND_LIGHT_FAILED
     assert "lamp" in melding["text"]
@@ -1120,13 +1135,13 @@ async def test_de_planner_laat_een_wekker_echt_afspelen(
     await hass.async_block_till_done()
 
     assert "music_assistant.play_media" in huis.namen()
-    assert ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     # Het bedoelde moment, niet "nu": 06:45 en niet 06:50 (fase 3b, regel 2).
     opgeslagen = hass.data[DOMAIN][DATA_STORE].wekker(registry_id, ALARM_ID)
     assert opgeslagen["last_fired"] == "2026-08-10T06:45:00+02:00"
 
     await afvuren.async_stop_afgaan(
-        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, ringing.REASON_USER
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
     )
 
 
@@ -1170,7 +1185,7 @@ async def test_unload_stopt_een_afgaande_wekker(
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert not ringing.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert not abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
     assert "media_player.media_stop" in huis.namen()
     # En daarna tikt er niets meer over een losgelaten opslag.
     await tik(hass, STOP_NA_MINUTEN * 60 + 1)

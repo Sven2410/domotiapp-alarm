@@ -216,7 +216,7 @@ zeggen: **zet de kaart op het dashboard dat op het wandtablet en op de telefoon
 openstaat.**
 
 Hoe de kaart het weet: via een abonnement, niet door te pollen. Zie
-[sectie 15.9](#159-domotiapp_alarmringingsubscribe).
+[sectie 15.9](#159-domotiapp_alarmupdatessubscribe).
 
 **Meerdere wekkers tegelijk.** Twee personen kunnen op dezelfde tijd een wekker
 hebben. Elke kaart toont alleen de wekkers van **zijn eigen** person
@@ -1814,12 +1814,23 @@ Stopt een lopende wekker.
 gewoon de huidige toestand terug. Een wandtablet en een telefoon kunnen tegelijk
 drukken.
 
-### 15.9 `domotiapp_alarm/ringing/subscribe`
+### 15.9 `domotiapp_alarm/updates/subscribe`
 
-Een abonnement, zodat de kaart weet dat hij een stopknop moet worden zonder te
-pollen.
+Eén abonnement op alles wat een open kaart nodig heeft om actueel te blijven.
 
-**Invoer:** `type`, en **VOORSTEL** een optionele `person` om alleen de wekkers
+**Tot fase 4b heette dit `ringing/subscribe`** en ging het alleen over afgaan.
+Fase 4a mat wat daaraan ontbrak: een wekker die op de telefoon wordt gewijzigd
+verscheen op het wandtablet **pas na een herlaadbeurt**, want er was geen
+abonnement op opslagwijzigingen. Met de editor uit
+[sectie 5](#5-de-editor-een-wekker-instellen) is dat zichtbaar gedrag.
+
+De naam volgt de bredere betekenis: het abonnement gaat over **updates** voor de
+kaart, waarvan afgaan er één soort is. Er waren nog geen klanten, dus hernoemen
+kostte niets — en één abonnement is beter dan twee, omdat de kaart dan één
+codepad heeft: *elk bericht betekent "haal de toestand opnieuw op"*, en alleen
+`started` en `stopped` doen daarnaast nog iets met de stopknop.
+
+**Invoer:** `type`, en **VOORSTEL** een optionele `person` om alleen de berichten
 van één persoon te ontvangen.
 
 **Berichten**
@@ -1830,9 +1841,49 @@ van één persoon te ontvangen.
 { "event": "failed",  "person": "person.sven", "alarm_id": "f0e3…",
   "reason": "speaker_unavailable",
   "text": "De wekker van 05:20 is niet afgegaan: …" }
+{ "event": "changed", "person": "person.sven" }
 ```
 
 `reason` bij `stopped` is `"user"`, `"timeout"` (de 30 minuten) of `"deleted"`.
+
+#### `changed` is een sein, geen toestand
+
+Het bericht draagt **alleen** `person`. De ontvanger haalt daarna zelf
+[`alarms/get`](#151-domotiapp_alarmalarmsget) op. Twee redenen:
+
+- een abonnee **zonder** `person`-filter zou anders bij elke wijziging de
+  wekkerlijst van élke persoon in huis toegestuurd krijgen. Dat is geen
+  beveiligingslek ([6.3](#63-dit-is-geen-beveiliging)) maar het is wel de
+  scheiding uit [sectie 6](#6-de-person-entiteit-als-opslagsleutel) gratis
+  weggeven;
+- `alarms/get` blijft de **enige** plek die de toestand samenstelt. Twee plekken
+  die hetzelfde antwoord opbouwen lopen uiteen — dezelfde reden dat de kaart
+  `next_fire` niet zelf berekent ([3.3](#33-de-regel-eerstvolgende-wekker)).
+
+De prijs is één extra aanroep per wijziging, en die wordt bewust betaald.
+
+#### `changed` komt uit de opslaglaag, niet uit de commando's
+
+**Vastgelegd**, want het is het verschil tussen een abonnement dat werkt en een
+dat gaten heeft. Het bericht gaat uit na elke geslaagde schrijfronde in de
+opslag, niet aan het eind van de vijf muterende commando's.
+
+Behalve die commando's schrijven namelijk ook de **planner** (`last_fired`, en de
+inhaalslag uit [13.4](#134-het-respijtvenster-30-minuten) die `skip_next` en
+`last_message` zet) en **[11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt)**
+(`last_message`) in de opslag. Dat zijn precies de wijzigingen die de klant niet
+zelf heeft aangevraagd — en dus de wijzigingen waarvan hij het meest heeft dat
+zijn kaart ze uit zichzelf laat zien.
+
+Het bericht gaat er **ná** het wegschrijven uit. Faalt het schrijven, dan is er
+niets gemeld: een kaart die dan `alarms/get` zou doen, zou een toestand ophalen
+die niet op schijf staat.
+
+**Een wijziging voor een persoon die niet meer bestaat levert geen bericht op.**
+De wekkers van een verwijderde persoon blijven in de opslag staan
+([18.1](#181-de-person-entiteit-wordt-hernoemd-of-verwijderd)), maar er is dan
+geen `person.`-entiteit om in het bericht te zetten en geen kaart die zich erop
+kan abonneren.
 
 **Dit is een abonnement en geen entiteit.** Vastgelegd.
 
@@ -1896,17 +1947,94 @@ Die regel blijft onaangetast, en de vorm van dit commando is de reden:
 
 De kaart kan met dit commando dus maar één ding: wegnemen wat de server zelf heeft
 geschreven. Een tweede commando dat een melding zou kúnnen zetten is er bewust
-niet — zie [15.11](#1511-wat-er-bewust-géén-commando-is).
+niet — zie [15.12](#1512-wat-er-bewust-géén-commando-is).
 
 **Idempotent:** een melding wissen die er niet is, is geen fout en geeft gewoon de
 huidige toestand terug. Twee schermen kunnen tegelijk op "Begrepen" drukken.
 
-### 15.11 Wat er bewust géén commando is
+### 15.11 `domotiapp_alarm/preview/start`
+
+De **voorbeeldknop** uit [5.4](#54-de-voorbeeldknop). Speelt het gekozen geluid op
+de gekozen speaker, met de waarden zoals ze **nu in de editor staan** — dus nog
+niet opgeslagen.
+
+**Invoer**
+
+| Veld | Type | Verplicht |
+|---|---|---|
+| `type` | `"domotiapp_alarm/preview/start"` | ja |
+| `speaker` | string, `media_player.`-entity-ID | ja |
+| `sound` | object, zoals in [14.2](#142-het-schema) | ja |
+| `volume_pct` | int 1–100 | ja |
+
+**Uitvoer:** een leeg resultaat zodra het geluid **daadwerkelijk speelt**. Alles
+wat kan mislukken gebeurt vóór dat resultaat, zodat een mislukt voorbeeld een
+gewone fout is en geen abonnement dat meteen weer stukgaat.
+
+**Fouten**
+
+| Code | Wanneer |
+|---|---|
+| `invalid_format` | een veld ontbreekt, heeft het verkeerde type, of er is geen `uri` in `sound` |
+| `not_allowed` | `speaker` haalt de controle uit [7.2](#72-vaststellen-dát-het-een-ma-speaker-is) niet, of er gaat op die speaker een **wekker** af |
+| `speaker_unavailable` | de noodrem uit [11.1](#111-vóór-het-afspelen-available): de speaker is niet bereikbaar |
+| `sound_gone` | `music_assistant.play_media` weigerde het geluid |
+
+#### Dit is een abonnement, en dat is de hele truc
+
+**Het voorbeeld loopt zolang dit abonnement loopt.** Afmelden stopt het geluid en
+zet het volume terug; er is **geen los `preview/stop`-commando**.
+
+Dat volgt rechtstreeks uit [5.4](#54-de-voorbeeldknop): *elke manier van de editor
+sluiten stopt het voorbeeld*. "Elke manier" is meer dan de kaart kan afvangen. De
+X, Escape, Annuleren en Opslaan zijn af te vangen; een tabblad dat wordt
+weggeklikt, een browser die crasht, een wandtablet dat zijn wifi verliest of een
+telefoon die in slaap valt niet.
+
+Met een stopcommando speelt de muziek in al die gevallen **door**, op een speaker
+waarvan het volume ook nog op het voorbeeldniveau blijft staan. Dat is de lege
+woning uit [9.4](#94-de-wekker-stopt-na-30-minuten), alleen dan zonder stoptimer.
+
+Home Assistant roept de opruimcallback van een abonnement aan zodra de client zich
+afmeldt **of de verbinding wegvalt**. De stopknop in de editor is dus een
+afmelding, en een weggevallen tabblad is dezelfde afmelding — één codepad, en het
+geval dat je niet kunt afvangen wordt gratis meegenomen.
+
+#### De tweede rem: een maximum
+
+Een abonnement leeft zolang de verbinding leeft, en een tabblad dat op een editor
+blijft staan kan dagen leven. Een voorbeeld stopt daarom hoe dan ook na **5
+minuten**. **VOORSTEL**; dezelfde gedachte als
+[9.4](#94-de-wekker-stopt-na-30-minuten), en het getal mag anders.
+
+#### Wat het voorbeeld niet doet, en waarom
+
+| Niet | Reden |
+|---|---|
+| **Geen volume-oploop** | Vastgelegd in [5.4](#54-de-voorbeeldknop): het doel is het geluid en het niveau beoordelen, en twintig seconden wachten voordat je hoort of het te hard staat maakt de knop onbruikbaar |
+| **Geen `radio_mode`** | Het voorbeeld duurt kort en wat er ná het item gebeurt is niet wat de klant beoordeelt. Meesturen haalt er wél een risico bij: bij een provider zonder `SIMILAR_TRACKS` geeft MA HTTP 500 en speelt er niets ([8.3.1](#831-radio_mode-wordt-voorwaardelijk-meegestuurd)) — dan lijkt de voorbeeldknop stuk terwijl het geluid deugt |
+| **Geen wake-up light** | De lamp hoort bij de wekker, niet bij het beoordelen van een geluid. Hem aanzetten zou een handeling zijn die de klant niet heeft gevraagd |
+
+#### Een wekker gaat vóór
+
+Gaat er op de gekozen speaker een **wekker** af, dan wordt het voorbeeld geweigerd
+met `not_allowed`. Het voorbeeld zou de queue overnemen en bij het stoppen het
+volume terugzetten naar wat de oploop op dat moment toevallig had gezet, waarna de
+wekker zachtjes of helemaal niet verder speelt. De wekker is het product; het
+voorbeeld is een hulpmiddel.
+
+**Een tweede voorbeeld op dezelfde speaker vervangt het eerste** — Music Assistant
+heeft één queue per player, dus naast elkaar bestaan ze toch niet.
+
+**Rechten:** iedere ingelogde gebruiker ([sectie 17](#17-rechten)).
+
+### 15.12 Wat er bewust géén commando is
 
 | Niet | Waarom |
 |---|---|
 | Een wekker aanmaken zonder speaker of geluid | Ze zijn verplicht; een half opgeslagen wekker is een wekker die stil faalt |
 | Een melding **zetten** of wijzigen | [15.10](#1510-domotiapp_alarmalarmsclear_message) wist alleen. Meldingen komen uit de integratie zelf ([11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt)); een aanroeper die er een kan schrijven, kan de klant vertellen dat zijn wekker is afgegaan terwijl dat niet zo is |
+| **`preview/stop`** | Afmelden van [15.11](#1511-domotiapp_alarmpreviewstart) **is** het stoppen. Een apart stopcommando zou het geval dat er het meest toe doet — een tabblad dat verdwijnt — juist niet dekken |
 | De wekkerlijst van álle personen ophalen | De kaart is per persoon; een overzichtscommando zou de scheiding uit [sectie 6](#6-de-person-entiteit-als-opslagsleutel) tot niets maken zonder er functionaliteit voor terug te geven |
 | Opslag verwijderen per persoon | v1 heeft geen opruimoverzicht; zie [sectie 18.1](#181-de-person-entiteit-wordt-hernoemd-of-verwijderd) en [sectie 20](#20-wat-niet-in-v1-zit) |
 | Het volume van een speaker rechtstreeks zetten | Dat is `media_player.volume_set` en dat bestaat al |
@@ -1965,8 +2093,8 @@ persoon daarna kiest.
 | Wekker aanmaken, wijzigen, verwijderen, aan/uit, overslaan | **iedere ingelogde gebruiker** |
 | Wekker stoppen | **iedere ingelogde gebruiker** |
 | Een melding wegklikken ("Begrepen") | **iedere ingelogde gebruiker** |
-| Geluid zoeken, voorbeeld spelen | iedere ingelogde gebruiker |
-| `entities/list`, `ringing/subscribe` | iedere ingelogde gebruiker |
+| Geluid zoeken, voorbeeld spelen ([15.11](#1511-domotiapp_alarmpreviewstart)) | iedere ingelogde gebruiker |
+| `entities/list`, `updates/subscribe` | iedere ingelogde gebruiker |
 | Labels aanmaken en op entiteiten zetten | admin (dat regelt HA zelf) |
 | Kaart aan een dashboard toevoegen of configureren | admin (dat regelt HA zelf) |
 
@@ -2349,4 +2477,4 @@ Elk punt met één regel waarom.
     overslaan ([14.2.1](#1421-één-veld-voor-fouten-én-mededelingen)).
 13. **De afgaan-toestand is niet beschikbaar voor automatiseringen.** Het is een
     abonnement en geen entiteit
-    ([15.9](#159-domotiapp_alarmringingsubscribe)).
+    ([15.9](#159-domotiapp_alarmupdatessubscribe)).
