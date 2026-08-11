@@ -21,9 +21,6 @@ export const STANDAARD_HELDERHEID_PCT = 60;
 /** Wat een `sound`-object mag bevatten (SPEC 8.2). */
 const GELUIDVELDEN = ["uri", "name", "media_type", "image"];
 
-/** Soorten die uit zichzelf ophouden (SPEC 8.3). */
-const EINDIGE_SOORTEN = ["track", "podcast", "audiobook"];
-
 export const TEKST_ZOMERTIJD =
   "Let op: deze tijd bestaat twee nachten per jaar niet, of twee keer. " +
   "Bij de overgang naar zomertijd wordt het uur van 02:00 tot 03:00 overgeslagen; " +
@@ -57,6 +54,11 @@ export function nieuwConcept() {
     days: [],
     enabled: true,
     sound: null,
+    // Of het gekozen geluid eindeloos doorspeelt (SPEC 15.6). `null` = onbekend,
+    // en dat is de toestand tot er iets gekozen is. Dit veld gaat **niet** de
+    // opslag in: het is een eigenschap van de provider, niet van de keuze, en
+    // `sound` mag maar vier velden hebben (SPEC 8.2).
+    endless: null,
     speaker: "",
     volume_pct: STANDAARD_VOLUME_PCT,
     light: null,
@@ -82,6 +84,10 @@ export function conceptVan(wekker) {
     days: Array.isArray(wekker.days) ? [...wekker.days] : [],
     enabled: wekker.enabled !== false,
     sound: kleedGeluidUit(wekker.sound),
+    // Onbekend, en dat blijft het: de opslag draagt `endless` niet en de kaart
+    // rekent het niet zelf uit. Er komt dus geen waarschuwing over een geluid dat
+    // al gekozen wás — die hoort bij het kiezen (SPEC 8.3.1).
+    endless: null,
     speaker: typeof wekker.speaker === "string" ? wekker.speaker : "",
     volume_pct: Number.isInteger(wekker.volume_pct) ? wekker.volume_pct : basis.volume_pct,
     light:
@@ -235,72 +241,96 @@ export function zomertijdWaarschuwing(tijd) {
 }
 
 /**
- * De waarschuwing bij een geluid met een eindige duur (SPEC 8.3). `null` als er
- * niets te waarschuwen valt.
+ * De waarschuwing bij een geluid dat uit zichzelf ophoudt (SPEC 8.3). `null` als
+ * er niets te waarschuwen valt.
  *
- * **LET OP — deze controle is ruimer dan SPEC 8.3.1 voorschrijft.** Die sectie
- * beperkt de waarschuwing tot geluiden waarvan de provider `SIMILAR_TRACKS`
- * **niet** ondersteunt: kan hij het wel, dan stuurt de integratie `radio_mode`
- * mee en blijft het geluid doorspelen, en dan is de waarschuwing onwaar.
+ * **De kaart beslist hier niets.** `sound/search` geeft per treffer een veld
+ * `endless` terug dat zegt of het geluid eindeloos doorspeelt (SPEC 15.6). Die
+ * vraag hangt af van `SIMILAR_TRACKS_PROVIDERS`, en die lijst staat server-side
+ * in `const.py` omdat het afvuren hem gebruikt om te beslissen of `radio_mode`
+ * meegaat. Hem hier nóg een keer neerzetten zou betekenen dat de editor "dit
+ * speelt door" kan beloven terwijl het afvuren `radio_mode` weglaat.
  *
- * De kaart kan dat onderscheid niet maken. De lijst providerdomeinen staat in
- * `const.py` (server-side, en met opzet op één plek — hem hier kopiëren is
- * precies de dubbele implementatie die dit product overal vermijdt), en
- * `sound/search` geeft niet terug of `radio_mode` meegestuurd zou worden.
+ * Tot fase 4c waarschuwde deze functie op `media_type` alleen, en dus ook bij een
+ * los nummer van een streamingprovider — waar `radio_mode` het juist eindeloos
+ * maakt. Dat is een waarschuwing die soms onwaar is, en dat is precies het soort
+ * dat mensen leren negeren.
  *
- * Wat er dus gebeurt: er wordt gewaarschuwd bij **elke** soort met een eindige
- * duur. Dat is hinderlijk waar het onnodig is, en dat is de goede kant om fout
- * te zitten (SPEC 8.3.1 kiest bij twijfel ook voor hinderlijk boven stil). De
- * nauwkeurige versie vraagt één veld extra in het antwoord van `sound/search`;
- * dat staat als openstaand punt in `CLAUDE.md`.
+ * **`undefined` betekent onbekend en geeft géén waarschuwing.** Dat is de
+ * toestand bij een wekker die uit de opslag komt: het opgeslagen `sound`-object
+ * heeft vier velden (SPEC 8.2) en `endless` hoort daar niet bij, want het is een
+ * eigenschap van de provider en niet van de keuze. De waarschuwing hoort bij het
+ * **kiezen** van een geluid, en daar is het veld er wel.
  */
-export function eindigeDuurWaarschuwing(geluid) {
-  if (!geluid || typeof geluid !== "object") {
-    return null;
-  }
-  return EINDIGE_SOORTEN.includes(geluid.media_type) ? TEKST_EINDIGE_DUUR : null;
+export function eindigeDuurWaarschuwing(endless) {
+  return endless === false ? TEKST_EINDIGE_DUUR : null;
+}
+
+/**
+ * Het `endless`-veld uit een zoektreffer halen (SPEC 15.6).
+ *
+ * Alleen een **echte boolean** telt; al het andere wordt `null`, oftewel
+ * onbekend. Dat is geen achterdocht jegens de eigen server maar de regel uit
+ * SPEC 19.1 in het klein: een waarde die niet klopt is geen waarde, en de
+ * uitkomst van "onbekend" (zwijgen) is hier veiliger dan die van een gok.
+ *
+ * Deze functie staat hier en niet in `editor.js` omdat ze aan het criterium uit
+ * CLAUDE.md voldoet: het is gedrag dat in een gewone Node-test op te schrijven
+ * is. De mutatie-oefening van fase 4c wees dat aan — zolang dit in de
+ * renderlaag stond, ving geen enkele unittest een wijziging eraan.
+ */
+export function endlessVan(treffer) {
+  return typeof treffer?.endless === "boolean" ? treffer.endless : null;
 }
 
 /**
  * Wat de editor toont als er geen bruikbare entiteiten zijn (SPEC 7.4).
  *
- * @param {{label_exists: boolean, entities: Array}} selectie uit `entities/list`
+ * @param {{label_exists: boolean, entities: Array, filtered_out: number}} selectie
+ *   uit `entities/list`
  * @param {"speaker"|"lamp"} soort
  * @returns {string|null} de melding, of `null` als er gewoon te kiezen valt
  *
- * **Twee van de drie gevallen uit SPEC 7.4 zijn hier niet te onderscheiden.**
- * `entities/list` filtert server-side en geeft `label_exists` plus de
- * overgebleven entiteiten; "het label bestaat maar er hangt niets aan" en "er
- * hing wel iets aan maar het viel af op de eisen van 7.2" leveren allebei een
- * lege lijst op. De tekst hieronder dekt daarom beide, in plaats van er één te
- * kiezen en in de helft van de gevallen iets onwaars te beweren. Ook dit vraagt
- * één veld extra in het antwoord; zie het openstaande punt in `CLAUDE.md`.
+ * **De drie gevallen van SPEC 7.4 zijn sinds fase 4c alle drie te onderscheiden**,
+ * dankzij `filtered_out` in het antwoord van `entities/list` (SPEC 15.7):
+ *
+ * | `label_exists` | `entities` | `filtered_out` | melding |
+ * |---|---|---|---|
+ * | `false` | leeg | 0 | het label bestaat nog niet |
+ * | `true` | leeg | 0 | er hangt niets aan het label |
+ * | `true` | leeg | > 0 | er hing wel iets aan, maar het viel af |
+ *
+ * Waarom dat verschil er toe doet: de tweede zegt tegen de eigenaar *"zet het
+ * label op je speakers"* en de derde *"die speakers zijn geen Music
+ * Assistant-speakers"*. Tot fase 4c toonde de kaart één tekst die beide dekte,
+ * en dat is één zin die je twee keer moet lezen om te weten wat je moet doen.
  *
  * In alle gevallen is de melding **geen foutkleur**: dit is een installatiestap
  * die nog moet gebeuren, geen storing.
  */
 export function labelMelding(selectie, soort) {
-  const label = soort === "lamp" ? LABEL_LAMP : LABEL_SPEAKER;
+  const lamp = soort === "lamp";
+  const label = lamp ? LABEL_LAMP : LABEL_SPEAKER;
+  const meervoud = lamp ? "lampen" : "speakers";
   if (!selectie || typeof selectie !== "object") {
-    return `De lijst met ${soort === "lamp" ? "lampen" : "speakers"} is niet op te halen.`;
+    return `De lijst met ${meervoud} is niet op te halen.`;
   }
   if (selectie.label_exists === false) {
     return (
       `Het label '${label}' bestaat nog niet. De beheerder moet dat label aanmaken ` +
-      `en op de ${soort === "lamp" ? "lampen" : "speakers"} zetten die als wekker mogen dienen.`
+      `en op de ${meervoud} zetten die als wekker mogen dienen.`
     );
   }
-  if (!Array.isArray(selectie.entities) || selectie.entities.length === 0) {
-    if (soort === "lamp") {
-      return `Er zijn nog geen lampen met het label '${label}'.`;
-    }
-    return (
-      `Er zijn nog geen bruikbare speakers met het label '${label}'. Gelabelde ` +
-      "speakers vallen af als het geen Music Assistant-speakers zijn of als ze geen " +
-      "volume kunnen instellen."
-    );
+  if (Array.isArray(selectie.entities) && selectie.entities.length > 0) {
+    return null;
   }
-  return null;
+  if (Number(selectie.filtered_out) > 0) {
+    return lamp
+      ? `De entiteiten met het label '${label}' zijn geen lampen.`
+      : "De gelabelde speakers zijn geen Music Assistant-speakers, of ze kunnen " +
+          "geen volume instellen.";
+  }
+  return `Er zijn nog geen ${meervoud} met het label '${label}'.`;
 }
 
 /**

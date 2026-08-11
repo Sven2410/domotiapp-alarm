@@ -34,6 +34,7 @@ import {
   STANDAARD_HELDERHEID_PCT,
   conceptVan,
   eindigeDuurWaarschuwing,
+  endlessVan,
   kleedGeluidUit,
   labelMelding,
   magOpslaan,
@@ -66,6 +67,13 @@ const SOORTEN = [
 
 const ICOON_INFO =
   "M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z";
+// mdi:magnify. De knop draagt zijn betekenis in `aria-label` en `title`, want een
+// icoon zonder tekst zegt een schermlezer niets.
+const ICOON_ZOEK =
+  "M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z";
+// mdi:timer-sand, zolang de zoekopdracht loopt.
+const ICOON_BEZIG =
+  "M6,2H18V8H18V8L14,12L18,16V16H18V22H6V16H6V16L10,12L6,8V8H6V2M16,16.5L12,12.5L8,16.5V20H16V16.5M12,11.5L16,7.5V4H8V7.5L12,11.5Z";
 
 export class DomotiappAlarmEditor extends LitElement {
   static properties = {
@@ -205,9 +213,15 @@ export class DomotiappAlarmEditor extends LitElement {
     }
   }
 
-  /** Valkuil 39: uitkleden vóór het opslaan, niet erna. */
+  /**
+   * Valkuil 39: uitkleden vóór het opslaan, niet erna.
+   *
+   * `endless` gaat apart mee en niet in `sound`: de opslag accepteert daar vier
+   * velden (SPEC 8.2), en `endless` is een eigenschap van de provider en niet van
+   * de keuze. Het bepaalt alleen of de waarschuwing uit SPEC 8.3 verschijnt.
+   */
   _kiesGeluid(treffer) {
-    this._zet({ sound: kleedGeluidUit(treffer) });
+    this._zet({ sound: kleedGeluidUit(treffer), endless: endlessVan(treffer) });
     this._treffers = null;
   }
 
@@ -353,6 +367,16 @@ export class DomotiappAlarmEditor extends LitElement {
       opacity: 0.45;
       cursor: not-allowed;
     }
+    /* Het vergrootglas naast het zoekveld: vierkant en zo smal mogelijk, want op
+       een telefoon vecht deze regel om de breedte met het veld ernaast. */
+    button.knop.zoekknop {
+      flex: 0 0 auto;
+      width: 42px;
+      padding: 9px 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
     button.knop.primair {
       background: var(--domotiapp-accent);
       border-color: var(--domotiapp-accent);
@@ -455,7 +479,7 @@ export class DomotiappAlarmEditor extends LitElement {
     const speakerMelding = labelMelding(speakers, "speaker");
     const lampMelding = labelMelding(lampen, "lamp");
     const zomertijd = zomertijdWaarschuwing(c.time);
-    const eindig = eindigeDuurWaarschuwing(c.sound);
+    const eindig = eindigeDuurWaarschuwing(c.endless);
     const kanOpslaan = opslaanKan(c, speakers);
 
     return html`
@@ -545,7 +569,7 @@ export class DomotiappAlarmEditor extends LitElement {
             id="zoek"
             type="text"
             .value=${this._zoekterm}
-            placeholder="Zoek in Music Assistant…"
+            placeholder="Zoek media"
             @input=${(e) => {
               this._zoekterm = e.target.value;
             }}
@@ -567,8 +591,15 @@ export class DomotiappAlarmEditor extends LitElement {
               ([waarde, naam]) => html`<option value=${waarde}>${naam}</option>`,
             )}
           </select>
-          <button class="knop" type="button" @click=${() => this._zoek()}>
-            ${this._zoekt ? "Bezig…" : "Zoeken"}
+          <button
+            class="knop zoekknop"
+            type="button"
+            title="Zoeken"
+            aria-label="Zoeken"
+            ?disabled=${this._zoekt}
+            @click=${() => this._zoek()}
+          >
+            ${this._svg(this._zoekt ? ICOON_BEZIG : ICOON_ZOEK)}
           </button>
         </div>
         ${this._treffers

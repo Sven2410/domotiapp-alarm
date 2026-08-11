@@ -569,8 +569,9 @@ async def test_entities_list_zonder_labels(
     client = await hass_ws_client(hass)
     antwoord = await _stuur(client, {"type": f"{DOMAIN}/entities/list"})
     assert antwoord["success"], antwoord
-    assert antwoord["result"]["speakers"] == {"label_exists": False, "entities": []}
-    assert antwoord["result"]["lights"] == {"label_exists": False, "entities": []}
+    leeg = {"label_exists": False, "entities": [], "filtered_out": 0}
+    assert antwoord["result"]["speakers"] == leeg
+    assert antwoord["result"]["lights"] == leeg
 
 
 async def test_entities_list_met_labels(hass: HomeAssistant, hass_ws_client) -> None:
@@ -603,9 +604,14 @@ async def test_entities_list_met_labels(hass: HomeAssistant, hass_ws_client) -> 
     speakers = antwoord["result"]["speakers"]
     assert speakers["label_exists"] is True
     assert speakers["entities"] == [{"entity_id": goed, "name": "Goed"}]
+    # De groep is gelabeld maar valt af op SPEC 7.3, en dat wordt geteld — anders
+    # kan de editor "er hangt niets aan het label" niet onderscheiden van "er hing
+    # wel iets aan maar het viel af" (SPEC 7.4, fase 4c).
+    assert speakers["filtered_out"] == 1
     lights = antwoord["result"]["lights"]
     assert lights["label_exists"] is True
     assert lights["entities"] == [{"entity_id": lamp, "name": "Bedlamp"}]
+    assert lights["filtered_out"] == 0
 
 
 # --- 15.8 en 15.9 ------------------------------------------------------

@@ -24,7 +24,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
-from . import abonnement, afvuren, entiteiten, planner, voorbeeld
+from . import abonnement, afvuren, entiteiten, planner, radiomodus, voorbeeld
 from .const import (
     DATA_STORE,
     DATA_WS_REGISTERED,
@@ -393,6 +393,13 @@ def _plat(antwoord: dict[str, Any]) -> list[dict[str, Any]]:
 
     De kaart toont een zoekresultaat en niet acht koppen; `media_type` per treffer
     houdt het onderscheid vast.
+
+    **`endless` wordt hier bepaald en niet in de kaart** (SPEC 15.6, fase 4c). Het
+    antwoord hangt af van `SIMILAR_TRACKS_PROVIDERS`, en die lijst staat in
+    `const.py` omdat `afvuren.py` hem gebruikt om te beslissen of `radio_mode`
+    meegaat. Zou de kaart de vraag zelf beantwoorden, dan bestaat die lijst twee
+    keer en kan de editor "dit speelt door" beloven terwijl het afvuren
+    `radio_mode` weglaat. Eén bron, één antwoord — zie `radiomodus.py`.
     """
     resultaten: list[dict[str, Any]] = []
     for emmer in _SEARCH_EMMERS:
@@ -407,6 +414,9 @@ def _plat(antwoord: dict[str, Any]) -> list[dict[str, Any]]:
                     "image": item.get("image"),
                     "artists": item.get("artists"),
                     "album": item.get("album"),
+                    "endless": radiomodus.blijft_doorspelen(
+                        item.get("uri"), item.get("media_type")
+                    ),
                 }
             )
     return resultaten

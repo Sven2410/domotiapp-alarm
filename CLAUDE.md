@@ -407,6 +407,17 @@ Vindplaatsen in `docs/fase-3c/RAPPORT.md` (34–40) en `RAPPORT-BIS.md` (41–42
     een test te verzinnen. Beide zijn fout. Een test op onbereikbare code bewijst
     niets en suggereert dekking die er niet is.
 
+    **Fase 4c vond een vierde uitkomst die hier niet in stond: de equivalente
+    mutant.** De regel is bereikbaar en nodig, maar de *mutatie* verandert het
+    gedrag voor geen enkele bereikbare invoer — twee schrijfwijzen van dezelfde
+    controle. Voorbeeld: `isinstance(x, str) and x.lower() in S` tegenover
+    `x is not None and str(x).lower() in S`, waar alle invoer óf een `str` óf
+    `None` is. Wat je dan doet is **niets**: geen test (die zou dekking
+    suggereren die er niet is) en niets weghalen (de controle zelf is wél nodig —
+    de mutatie die hem hélemaal weghaalt wordt gevangen). Je noteert dat je het
+    hebt nagerekend. Het onderscheid met de derde rij: daar is de **regel**
+    overbodig, hier alleen de **vorm** ervan.
+
 35. **Een test die de juiste uitkomst om de verkeerde reden krijgt, is geen test.**
     Fase 3c's eerste poging om A19 te vangen (de register-controle in de oploop)
     slaagde ogenschijnlijk, maar wat er werkelijk afbrak was `wijkt_af`: na een
@@ -630,7 +641,8 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 3c | Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py`, `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost — oorzaak was de `my`-integratie, niet `external_url`. Live: +2,153 s afwijking, oploop 1,006 s per stap, audio bewezen aan de speakerkant. Eén blokkerende bevinding, opgelost in 3c-bis | in PR #8 |
 | 3c-bis | De URI-controle vervalt (SPEC 11.2 herschreven, 11.2.1 vervallen, 11.2.2 met een nieuw criterium). De SomaFM-wekker die in 3c niet afging, gaat nu af met 0 van 87 s stilte. 212 tests, 5 mutaties. `play_media` blokkeert 2,1–2,6 s en dat is niet weg te nemen zonder de foutdetectie te verliezen (`core.py:2953-2959`) | gemerged |
 | 4a | De kaart in rusttoestand en de stoptoestand: lijst, schakelaar, overloopmenu, bevestiging bij verwijderen, melding met "Begrepen", en de kaart die één stopknop wordt. Twee pure modules (`weergave.js`, `kaartconfig.js`), de config-editor met `ha-form`. Een **tiende commando** `alarms/clear_message` erbij, want SPEC 11.7 vroeg een knop die SPEC 15 niet kon bedienen; SPEC 15.10/15.11 bijgewerkt met toestemming van de eigenaar. 40 JS- en 216 Python-tests, 28 mutaties (2 gaten gevonden) | gemerged |
-| **4b** | **De editor (SPEC 5) achter de plusknop en achter een tik op een rij, met zoeken in MA, de zomertijdwaarschuwing en de voorbeeldknop. `ringing/subscribe` verbreed tot `updates/subscribe` met een `changed`-bericht uit de opslaglaag — daarmee is het openstaande punt van 4a gesloten. `preview/start` als abonnement, zodat een weggeklikt tabblad het geluid stopt (gemeten: 8,8 s). 69 JS- en 238 Python-tests, 31 mutaties in twee rondes** | **deze ronde, PR #10** |
+| 4b | De editor (SPEC 5) achter de plusknop en achter een tik op een rij, met zoeken in MA, de zomertijdwaarschuwing en de voorbeeldknop. `ringing/subscribe` verbreed tot `updates/subscribe` met een `changed`-bericht uit de opslaglaag — daarmee is het openstaande punt van 4a gesloten. `preview/start` als abonnement, zodat een weggeklikt tabblad het geluid stopt (gemeten: 8,8 s). 69 JS- en 238 Python-tests, 31 mutaties in twee rondes | gemerged |
+| **4c** | **De twee openstaande SPEC-punten van 4b gedicht: `sound/search` geeft per treffer `endless` (op dezelfde providerlijst als het afvuren) en `entities/list` geeft `filtered_out`, waarmee de drie situaties van SPEC 7.4 onderscheidbaar zijn. Het zoekveld past nu op een telefoon: placeholder "Zoek media", knop een vergrootglas. 77 JS- en 264 Python-tests, 23 mutaties in twee rondes** | **deze ronde, PR #11** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -787,6 +799,11 @@ zowel terwijl hij openstaat (via `updates/subscribe`) als bij het openen (via he
    verbergen laat hem staan op het wandtablet en zet hem terug na een herlaadbeurt.
    Daarvoor bestaat `alarms/clear_message` (SPEC 15.10).
 
+**Wat er staat na fase 4c:** hetzelfde als na 4b, met twee meldingen die niet meer
+kunnen liegen. De editor waarschuwt alleen nog over een geluid dat werkelijk
+ophoudt, en de drie situaties van SPEC 7.4 hebben elk hun eigen tekst. Het zoekveld
+past op een telefoon.
+
 **Wat er staat na fase 4b: het product is functioneel compleet.** De editor zit achter
 de plusknop en achter een tik op een rij, met de tijdkiezer, de herhaaldagen, het zoeken
 in Music Assistant, de speaker- en lampkiezer, de zomertijdwaarschuwing en de
@@ -833,8 +850,20 @@ Alle vier zijn in fase 4a en 4b gebouwd en gemeten. Punt 2 telt sinds 4b **vier*
 soorten: `changed` is erbij gekomen, en de kaart behandelt elk bericht hetzelfde —
 haal de toestand opnieuw op.
 
-**Een dashboard om in te meten staat klaar:** `/fase-4a/0` (sections-weergave, de kaart
-op `person.dev`) en `/fase-4a/spec163` met de drie gevallen van SPEC 16.3 naast elkaar.
+**En sinds 4c geldt er een vijfde, die breder is dan de kaart:** *laat de kant die
+het antwoord heeft het antwoord geven.* Twee keer bleek de kaart iets te moeten
+raden wat de server wist — of `radio_mode` meegaat (`endless`), en waarom een
+entiteitenlijst leeg is (`filtered_out`). Beide keren was het gevolg een melding
+die soms onwaar was, en dat is het soort dat mensen leren negeren. Eén veld in een
+bestaand commando is bijna altijd goedkoper dan een tweede implementatie in de
+kaart.
+
+**Drie dashboards om in te meten staan klaar:** `/fase-4a/0` (sections-weergave, de
+kaart op `person.dev`), `/fase-4a/spec163` met de drie gevallen van SPEC 16.3 naast
+elkaar, en `/fase-4a/smal` — dezelfde kaart op `grid_options: {columns: 9}`, wat
+**373 px** oplevert. Dat is telefoonbreedte (Galaxy S8 360, iPhone SE 375, Pixel 7
+412) en het is de manier om afkappende teksten te meten zonder het browservenster te
+verkleinen, wat op een gemaximaliseerd venster niet lukt (fase 4c).
 
 **En let op de testrig**: tel de snapclients vóór je een audiometing gelooft
 (valkuil 47). Er hoort er **één per hostID** te draaien.
@@ -865,8 +894,8 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
 | **De volume-oploop begint 2,1–2,6 s te laat** doordat `play_media` blokkeert tot MA de stream heeft opgezet. Niet-blokkerend aanroepen kan niet: `core.py:2953-2959` vangt de exceptie binnen HA af, en dan vervallen de `radio_mode`-terugval én de foutmelding. De oploop eerder starten verandert SPEC 9.1 en de betekenis van het `started`-event. **Aanbeveling die niet gebouwd is:** de oploop laten *inhalen* — begin op de stap die bij de verstreken tijd hoort. Meting ligt vast in SPEC 20.1 punt 9 | `afvuren.py` / SPEC 9.1, 9.3 | **beslissing van de eigenaar** |
 | **De tekst van SPEC 11.7 bij `sound_gone` stelt het zekerder dan de code weet**: "het gekozen geluid bestaat niet meer" terwijl er alleen vaststaat dat het niet startte. De soort is juist, de formulering claimt te veel. `"kon niet gestart worden"` zou nauwkeuriger zijn | SPEC 11.7 | **eigenaar**, woordkeuze |
-| **De waarschuwing bij een geluid met eindige duur is te ruim.** SPEC 8.3.1 beperkt hem tot providers zonder `SIMILAR_TRACKS`; de kaart kan dat niet weten, want de providerlijst staat server-side in `const.py` en `sound/search` geeft niet terug of `radio_mode` meegestuurd zou worden. De editor waarschuwt daarom bij **elke** eindige soort — hinderlijk waar het onnodig is, en dat is de goede kant om fout te zitten. **Oplossing: één veld `radio_mode` per treffer** in het antwoord van `sound/search` | SPEC 15.6 / `editorlogica.js` | **eigenaar**, kleine SPEC-wijziging |
-| **Twee van de drie meldingen uit SPEC 7.4 zijn niet te onderscheiden.** `entities/list` geeft `label_exists` plus de overgebleven entiteiten, dus "label bestaat maar is leeg" en "alles viel af op de eisen van 7.2" leveren allebei een lege lijst op. De editor toont één tekst die beide dekt in plaats van er één te kiezen en soms te liegen. **Oplossing: een `filtered_out`-telling** in het antwoord | SPEC 15.7 / `editorlogica.js` | **eigenaar**, kleine SPEC-wijziging |
+| **De waarschuwing bij een eindig geluid blijft weg bij een BESTAANDE wekker.** `endless` komt uit `sound/search` en staat niet in de opslag — het is een eigenschap van de provider, niet van de keuze (SPEC 15.6). Wie hem ook wil zien bij het openen van een oude wekker, moet `endless` in de opslag zetten of `alarms/get` het laten meesturen. Aanvaard in fase 4c | SPEC 8.2 / 15.1 | **eigenaar**, als hij het mist |
+| **De provider-as van `endless` is niet live aangetoond**, alleen de soort-as: er is geen streamingprovider op deze instance (fase 0b). Unittests dekken het paar `spotify`/`somafm` op dezelfde soort | `radiomodus.py` | de eigenaar toetst het op zijn eigen HA |
 | **De tijdkiezer is niet op iOS of Android getoetst.** SPEC 5.2 eist alle drie de platformen. Gemeten is dat `<input type="time">` op desktop met toetsen én kliks werkt en dat `ha-time-input` op het dashboard **niet geladen** is (valkuil 50). Een echt apparaat is nodig | de editor | **eigenaar toetst dit op zijn telefoon** |
 | **De time-out van `sound/search` is nooit opgetreden in een meting.** De tekst uit SPEC 15.6 wordt server-side gezet en door de editor getoond, maar RadioBrowser was deze ronde snel | `websocket.py` / de editor | bij gelegenheid |
 | `getCardSize()` bestaat sinds 4a (1 per rij + 1, en 3 in de stoptoestand) maar is **niet in een masonry-weergave nagemeten**; het dashboard staat in sections-weergave zoals SPEC 20.1 punt 2 voorschrijft | de kaart | 4b of later |

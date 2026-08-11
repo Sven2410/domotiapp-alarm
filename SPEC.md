@@ -488,11 +488,20 @@ maar een lege selectie, **plus** een expliciete `missing_labels`. Daarmee is
 en dat zijn twee verschillende meldingen. `entities/list` levert dat onderscheid
 door als `label_exists`.
 
-| Situatie | Wat de editor toont |
-|---|---|
-| Label bestaat **niet** | **"Het label 'Music Assistant Wekker' bestaat nog niet. De beheerder moet dat label aanmaken en op de speakers zetten die als wekker mogen dienen."** |
-| Label bestaat, **geen** entiteiten | **"Er zijn nog geen speakers met het label 'Music Assistant Wekker'."** |
-| Label bestaat, entiteiten vallen af op [7.2](#72-vaststellen-dát-het-een-ma-speaker-is) | **"De gelabelde speakers zijn geen Music Assistant-speakers, of ze kunnen geen volume instellen."** |
+| Situatie | Signaal uit [15.7](#157-domotiapp_alarmentitieslist) | Wat de editor toont |
+|---|---|---|
+| Label bestaat **niet** | `label_exists: false` | **"Het label 'Music Assistant Wekker' bestaat nog niet. De beheerder moet dat label aanmaken en op de speakers zetten die als wekker mogen dienen."** |
+| Label bestaat, **geen** entiteiten | leeg, `filtered_out: 0` | **"Er zijn nog geen speakers met het label 'Music Assistant Wekker'."** |
+| Label bestaat, entiteiten vallen af op [7.2](#72-vaststellen-dát-het-een-ma-speaker-is) | leeg, `filtered_out > 0` | **"De gelabelde speakers zijn geen Music Assistant-speakers, of ze kunnen geen volume instellen."** |
+
+**De middelste kolom is toegevoegd in fase 4c.** Tot dan leverde `entities/list`
+alleen `label_exists` en de overgebleven entiteiten, en waren de onderste twee
+situaties **van buiten niet te onderscheiden** — beide een lege lijst. De kaart
+toonde er daarom één tekst voor die beide dekte. Dat is precies de verkeerde
+uitkomst voor de eigenaar: het verschil tussen die twee is het verschil tussen
+*"zet het label op je speakers"* en *"die speakers zijn geen Music
+Assistant-speakers"*, en dat zijn twee verschillende handelingen. Zie
+[15.7](#157-domotiapp_alarmentitieslist).
 
 In alle drie de gevallen:
 
@@ -505,7 +514,9 @@ In alle drie de gevallen:
 
 Voor de wake-up light geldt hetzelfde, met één verschil: die is **optioneel**, dus
 een ontbrekend label `Verlichting Wekker` blokkeert niets. De keuze wordt dan
-niet aangeboden en er staat één regel bij waarom.
+niet aangeboden en er staat één regel bij waarom. De derde situatie luidt daar
+**"De entiteiten met het label 'Verlichting Wekker' zijn geen lampen."**, want de
+enige eis aan een lamp is het domein ([sectie 12](#12-de-wake-up-light)).
 
 ---
 
@@ -721,9 +732,9 @@ De rechterkolom heeft geen enkel geval waarin er niets klinkt. Dat is de reden.
 
 **De waarschuwing uit [8.3](#83-afspelen) blijft staan**, en geldt voor precies de
 gevallen waarin `radio_mode` **niet** meegestuurd wordt: een geluid met een eindige
-duur (`track`, `podcast`, `audiobook`) waarvan de provider `SIMILAR_TRACKS` niet
-ondersteunt of waarvan dat niet vast te stellen is. De editor **waarschuwt** dan,
-niet blokkerend:
+duur (`track`, `podcast`, `audiobook`, en ook `artist` of `album`) waarvan de
+provider `SIMILAR_TRACKS` niet ondersteunt of waarvan dat niet vast te stellen is.
+De editor **waarschuwt** dan, niet blokkerend:
 
 > **Dit geluid stopt van zichzelf.** Een los nummer is na een paar minuten
 > voorbij; daarna is het stil. Kies een afspeellijst of een radiostation als de
@@ -732,6 +743,20 @@ niet blokkerend:
 Kan het wél, dan blijft de waarschuwing weg en stopt de wekker alleen door de
 gebruiker of door de 30-minutentimer
 ([9.4](#94-de-wekker-stopt-na-30-minuten)).
+
+**Hoe de editor dat weet: `sound/search` zegt het** — het veld `endless` per
+treffer, [15.6](#156-domotiapp_alarmsoundsearch). **Toegevoegd in fase 4c**, en
+het lost een gat op dat de waarschuwing onbetrouwbaar maakte: de kaart kan de
+providerlijst niet raadplegen zonder hem te dupliceren, dus waarschuwde ze op de
+**soort** alleen. Een los nummer van een streamingprovider kreeg dan een
+waarschuwing dat het geluid van zichzelf stopt, terwijl `radio_mode` het juist
+eindeloos maakt.
+
+Dat is erger dan het klinkt. Een waarschuwing die soms onwaar is, is een
+waarschuwing die mensen leren negeren — en dan werkt hij ook niet meer in de
+gevallen waarvoor hij bedoeld is. De regel die daaruit volgt en breder geldt:
+**laat de kant die het antwoord heeft het antwoord geven**, ook als dat een veld
+in een bestaand commando kost.
 
 ---
 
@@ -1730,7 +1755,7 @@ filtering in twee talen bestaan.
   "results": [
     { "name": "SomaFM: Beat Blender", "uri": "somafm://radio/beatblender",
       "media_type": "radio", "image": null,
-      "artists": null, "album": null }
+      "artists": null, "album": null, "endless": true }
   ]
 }
 ```
@@ -1738,6 +1763,40 @@ filtering in twee talen bestaan.
 **Één platte lijst**, niet de acht lijsten van MA. De kaart toont een
 zoekresultaat en niet acht koppen; `media_type` per treffer houdt het onderscheid
 vast.
+
+#### `endless` — blijft dit geluid doorspelen?
+
+**Toegevoegd in fase 4c.** Een boolean per treffer die zegt of het geluid
+eindeloos doorspeelt. De editor toont de waarschuwing uit
+[8.3](#83-afspelen) wanneer hij `false` is, en anders niet.
+
+**Dit wordt server-side bepaald en de kaart interpreteert niets.** Dat is de hele
+reden dat het veld bestaat. Het antwoord hangt af van
+`SIMILAR_TRACKS_PROVIDERS` — dezelfde constante waarmee
+[8.3.1](#831-radio_mode-wordt-voorwaardelijk-meegestuurd) beslist of `radio_mode`
+meegaat. Zou de kaart die lijst óók hebben, dan bestaat hij twee keer en kan de
+editor *"dit speelt door"* beloven terwijl het afvuren `radio_mode` weglaat. Eén
+lijst betekent dat hij ook maar op één plek fout kan staan — en fase 3a-bis legde
+vast dat die lijst **stil** kan verouderen.
+
+`true` bij **een** van deze twee, in deze volgorde:
+
+| Reden | Voorbeeld |
+|---|---|
+| de **soort** houdt uit zichzelf niet op: `radio` of `playlist` ([8.3](#83-afspelen)) | `somafm://radio/…` van een provider zonder `SIMILAR_TRACKS` |
+| **`radio_mode`** gaat mee, dus MA speelt na het item door in dezelfde stijl | `spotify--…://track/…` |
+
+Bij twijfel — een onbekend URI-schema, een lege URI, een soort die er niet in
+staat — is het `false`. Dat is de goede kant om fout te zitten: een waarschuwing
+te veel is hinderlijk, een belofte dat het geluid doorspeelt terwijl het na drie
+minuten stopt is een wekker die stil valt.
+
+**Waarom er geen `endless` in de opslag staat:** het is een eigenschap van de
+**provider** en niet van de keuze, en het kan veranderen zonder dat de klant iets
+doet. `sound` houdt de vier velden van [8.2](#82-sla-de-uri-op-niet-de-naam).
+Gevolg, en dat is aanvaard: opent de klant een **bestaande** wekker, dan weet de
+editor het niet en waarschuwt hij niet. De waarschuwing hoort bij het **kiezen**
+van een geluid, en daar is het veld er wel.
 
 **De volgorde: afspeellijsten en radio eerst**, daarna de rest in de volgorde
 waarin MA ze gaf. Vastgelegd.
@@ -1785,18 +1844,52 @@ De gelabelde speakers en lampen, server-side gefilterd.
 {
   "speakers": {
     "label_exists": true,
-    "entities": [ { "entity_id": "media_player.slaapkamer", "name": "Slaapkamer" } ]
+    "entities": [ { "entity_id": "media_player.slaapkamer", "name": "Slaapkamer" } ],
+    "filtered_out": 0
   },
   "lights": {
     "label_exists": false,
-    "entities": []
+    "entities": [],
+    "filtered_out": 0
   }
 }
 ```
 
-`label_exists` maakt het onderscheid uit
-[sectie 7.4](#74-wat-de-kaart-toont-als-het-label-nog-niet-bestaat) mogelijk en
-komt uit `missing_labels` van `helpers/target.py`.
+`label_exists` komt uit `missing_labels` van `helpers/target.py`.
+
+#### `filtered_out` — hoeveel gelabelde entiteiten zijn afgevallen
+
+**Toegevoegd in fase 4c**, om de drie situaties van
+[7.4](#74-wat-de-kaart-toont-als-het-label-nog-niet-bestaat) uit elkaar te kunnen
+houden. Met alleen `label_exists` en `entities` zijn er drie situaties en twee
+signalen:
+
+| Situatie ([7.4](#74-wat-de-kaart-toont-als-het-label-nog-niet-bestaat)) | `label_exists` | `entities` | `filtered_out` |
+|---|---|---|---|
+| het label bestaat niet | `false` | leeg | 0 |
+| het label bestaat, er hangt niets aan | `true` | leeg | **0** |
+| er hing wél iets aan, maar het viel af op [7.2](#72-vaststellen-dát-het-een-ma-speaker-is) | `true` | leeg | **> 0** |
+
+De onderste twee zien er zonder deze teller identiek uit, en het zijn voor de
+eigenaar twee heel verschillende boodschappen: *"zet het label op je speakers"*
+tegenover *"die speakers zijn geen Music Assistant-speakers"*. Tot fase 4c toonde
+de kaart één tekst die beide dekte, en dat is een zin die je twee keer moet lezen
+om te weten wat je moet doen.
+
+**Het is een getal en geen lijst met redenen.** De melding van
+[7.4](#74-wat-de-kaart-toont-als-het-label-nog-niet-bestaat) is één zin die alle
+afvalredenen samenvat, en de reden per entiteit staat al op `DEBUG` in het log.
+Een lijst zou de kaart uitnodigen er zelf zinnen van te maken, en dan staat de
+uitleg op twee plekken.
+
+**Ook bij de lampen**, waar de enige eis het domein is
+([sectie 12](#12-de-wake-up-light)): een `Verlichting Wekker`-label op iets dat
+geen lamp is, telt mee.
+
+**VOORSTEL:** `name` is de weergavenaam van de entiteit
+(`friendly_name`), die een `unavailable` entiteit overleeft
+(`helpers/entity.py:1166-1167`) — anders zou een weggevallen speaker in de lijst
+als kaal entity-ID verschijnen.
 
 **VOORSTEL:** `name` is de weergavenaam van de entiteit
 (`friendly_name`), die een `unavailable` entiteit overleeft

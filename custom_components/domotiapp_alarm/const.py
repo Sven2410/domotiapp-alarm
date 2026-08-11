@@ -106,6 +106,15 @@ SIMILAR_TRACKS_PROVIDERS: Final[frozenset[str]] = frozenset(
     }
 )
 
+# Mediasoorten die uit zichzelf niet ophouden (SPEC 8.3). Voor deze twee is de
+# waarschuwing uit 8.3.1 nooit nodig, ongeacht de provider.
+#
+# Een afspeellijst staat er bewust bij: hij is niet oneindig maar wél van
+# onbepaalde duur, en in de praktijk langer dan de stoptimer van 30 minuten
+# (SPEC 9.4). SPEC 8.3 noemt radio en afspeellijst samen als "de soorten die bij
+# een wekker passen".
+ONEINDIGE_SOORTEN: Final[frozenset[str]] = frozenset({"radio", "playlist"})
+
 # --- Standaardwaarden voor een nieuwe wekker (SPEC 14.3) ----------------
 DEFAULT_TIME: Final = "07:00"
 DEFAULT_VOLUME_PCT: Final = 40

@@ -25,6 +25,7 @@ import {
   TEKST_ZOMERTIJD,
   conceptVan,
   eindigeDuurWaarschuwing,
+  endlessVan,
   geldigeTijd,
   kleedGeluidUit,
   labelMelding,
@@ -115,6 +116,7 @@ describe("conceptVan (SPEC 5.5)", () => {
     assert.deepEqual(Object.keys(c).sort(), [
       "days",
       "enabled",
+      "endless",
       "id",
       "light",
       "name",
@@ -123,6 +125,9 @@ describe("conceptVan (SPEC 5.5)", () => {
       "time",
       "volume_pct",
     ]);
+    // `endless` is onbekend voor een opgeslagen wekker: de opslag draagt het veld
+    // niet (SPEC 8.2) en de kaart rekent het niet zelf uit (SPEC 15.6).
+    assert.equal(c.endless, null);
     assert.equal(c.enabled, false);
     assert.equal(c.volume_pct, 55);
     assert.deepEqual(c.light, { entity_id: "light.bed", brightness_pct: 30 });
@@ -246,6 +251,17 @@ describe("naarAlarm (SPEC 15.2)", () => {
     assert.equal(naarAlarm(volledigConcept({ id: "a1f4" })).id, "a1f4");
   });
 
+  it("stuurt `endless` nooit mee naar de opslag (NIEUW GEDRAG)", () => {
+    // `endless` komt uit `sound/search` (SPEC 15.6) en hoort niet in het
+    // `sound`-object van de opslag, dat vier velden kent (SPEC 8.2). Zou het
+    // meegaan, dan weigert `alarms/save` de hele wekker met `invalid_format` —
+    // dezelfde valkuil 39 als met `album` en `artists`.
+    const alarm = naarAlarm({ ...volledigConcept(), endless: true });
+    assert.equal("endless" in alarm, false);
+    assert.equal("endless" in alarm.sound, false);
+    assert.deepEqual(Object.keys(alarm.sound).sort(), ["image", "media_type", "name", "uri"]);
+  });
+
   it("stuurt nooit een serverveld mee (NIEUW GEDRAG)", () => {
     const alarm = naarAlarm({
       ...volledigConcept(),
@@ -293,20 +309,59 @@ describe("zomertijdWaarschuwing (SPEC 5.3)", () => {
   });
 });
 
-describe("eindigeDuurWaarschuwing (SPEC 8.3)", () => {
-  it("waarschuwt bij soorten die uit zichzelf ophouden (NIEUW GEDRAG)", () => {
-    for (const soort of ["track", "podcast", "audiobook"]) {
-      assert.equal(eindigeDuurWaarschuwing({ media_type: soort }), TEKST_EINDIGE_DUUR, soort);
-    }
+describe("eindigeDuurWaarschuwing (SPEC 8.3 en 15.6)", () => {
+  it("waarschuwt als de server zegt dat het geluid ophoudt (NIEUW GEDRAG)", () => {
+    assert.equal(eindigeDuurWaarschuwing(false), TEKST_EINDIGE_DUUR);
   });
 
-  it("waarschuwt niet bij radio en afspeellijsten (NIEUW GEDRAG)", () => {
-    // De positieve controle, en meteen de reden dat SPEC 15.6 die twee vooraan
-    // zet: dat is wat mensen voor een wekker kiezen.
-    for (const soort of ["radio", "playlist", "artist", "album"]) {
-      assert.equal(eindigeDuurWaarschuwing({ media_type: soort }), null, soort);
-    }
+  it("waarschuwt NIET als het geluid eindeloos doorspeelt (NIEUW GEDRAG)", () => {
+    // Dit is het gat dat fase 4c dicht. Tot dan waarschuwde de kaart op
+    // `media_type` alleen, en dus ook bij een los nummer van een provider mét
+    // SIMILAR_TRACKS — waar `radio_mode` het juist eindeloos maakt. Een
+    // waarschuwing die soms onwaar is, is er een die mensen leren negeren.
+    assert.equal(eindigeDuurWaarschuwing(true), null);
+  });
+
+  it("waarschuwt niet bij onbekend (NIEUW GEDRAG)", () => {
+    // De toestand bij een wekker die uit de opslag komt: `endless` staat er niet
+    // in, dus er valt niets te beweren. Zwijgen is dan juist — de waarschuwing
+    // hoort bij het kiezen van een geluid (SPEC 8.3.1).
     assert.equal(eindigeDuurWaarschuwing(null), null);
+    assert.equal(eindigeDuurWaarschuwing(undefined), null);
+  });
+
+  it("interpreteert niets zelf (NIEUW GEDRAG)", () => {
+    // De kaart mag niet op `media_type` of op de URI gaan rekenen: dan bestaat
+    // SIMILAR_TRACKS_PROVIDERS twee keer en kan de editor "dit speelt door"
+    // beloven terwijl het afvuren `radio_mode` weglaat. Alleen de boolean telt.
+    assert.equal(eindigeDuurWaarschuwing("false"), null);
+    assert.equal(eindigeDuurWaarschuwing(0), null);
+    assert.equal(eindigeDuurWaarschuwing({ media_type: "track" }), null);
+  });
+});
+
+describe("endlessVan (SPEC 15.6)", () => {
+  it("neemt de boolean over zoals de server hem gaf (NIEUW GEDRAG)", () => {
+    assert.equal(endlessVan({ endless: true }), true);
+    assert.equal(endlessVan({ endless: false }), false);
+  });
+
+  it("maakt van alles wat geen boolean is onbekend (NIEUW GEDRAG)", () => {
+    // SPEC 19.1 in het klein: een waarde die niet klopt is geen waarde. En
+    // "onbekend" zwijgt, wat hier veiliger is dan gokken.
+    for (const rommel of [undefined, null, "true", "false", 0, 1, {}, []]) {
+      assert.equal(endlessVan({ endless: rommel }), null, JSON.stringify(rommel));
+    }
+    assert.equal(endlessVan(undefined), null);
+    assert.equal(endlessVan(null), null);
+    assert.equal(endlessVan({}), null);
+  });
+
+  it("werkt samen met de waarschuwing (NIEUW GEDRAG)", () => {
+    // De keten die de editor doorloopt: treffer -> endlessVan -> waarschuwing.
+    assert.equal(eindigeDuurWaarschuwing(endlessVan({ endless: false })), TEKST_EINDIGE_DUUR);
+    assert.equal(eindigeDuurWaarschuwing(endlessVan({ endless: true })), null);
+    assert.equal(eindigeDuurWaarschuwing(endlessVan({})), null);
   });
 });
 
@@ -315,22 +370,49 @@ describe("labelMelding (SPEC 7.4)", () => {
     assert.equal(labelMelding(SPEAKERS_OK, "speaker"), null);
   });
 
-  it("onderscheidt een ontbrekend label van een lege lijst (NIEUW GEDRAG)", () => {
-    // Dat onderscheid is het hele punt van `label_exists` (gemeten in fase 0,
-    // E4.3): "het label bestaat niet" is een installatiestap voor de beheerder,
-    // "het label is leeg" is er een voor wie de speakers labelt.
-    const ontbreekt = labelMelding({ label_exists: false, entities: [] }, "speaker");
-    assert.match(ontbreekt, /bestaat nog niet/);
-    assert.match(ontbreekt, /Music Assistant Wekker/);
+  it("onderscheidt de drie situaties uit SPEC 7.4 (NIEUW GEDRAG)", () => {
+    // Sinds fase 4c zijn het er drie in plaats van twee. Het onderscheid tussen
+    // de laatste twee is voor de eigenaar het verschil tussen "zet het label op
+    // je speakers" en "die speakers zijn geen Music Assistant-speakers".
+    const geenLabel = labelMelding({ label_exists: false, entities: [], filtered_out: 0 }, "speaker");
+    const leegLabel = labelMelding({ label_exists: true, entities: [], filtered_out: 0 }, "speaker");
+    const afgevallen = labelMelding({ label_exists: true, entities: [], filtered_out: 2 }, "speaker");
 
-    const leeg = labelMelding({ label_exists: true, entities: [] }, "speaker");
-    assert.match(leeg, /nog geen bruikbare speakers/);
-    assert.notEqual(leeg, ontbreekt);
+    assert.match(geenLabel, /bestaat nog niet/);
+    assert.match(geenLabel, /Music Assistant Wekker/);
+    assert.match(leegLabel, /nog geen speakers met het label/);
+    assert.match(afgevallen, /geen Music Assistant-speakers/);
+
+    // Alle drie verschillend — dat is de eis, en zonder deze assertie zou één
+    // tekst voor twee gevallen er doorheen komen.
+    assert.equal(new Set([geenLabel, leegLabel, afgevallen]).size, 3);
   });
 
   it("noemt het juiste label per soort (NIEUW GEDRAG)", () => {
-    assert.match(labelMelding({ label_exists: false, entities: [] }, "lamp"), /Verlichting Wekker/);
-    assert.match(labelMelding({ label_exists: true, entities: [] }, "lamp"), /lampen/);
+    assert.match(
+      labelMelding({ label_exists: false, entities: [], filtered_out: 0 }, "lamp"),
+      /Verlichting Wekker/,
+    );
+    assert.match(labelMelding({ label_exists: true, entities: [], filtered_out: 0 }, "lamp"), /lampen/);
+  });
+
+  it("onderscheidt de drie situaties ook bij de lampen (NIEUW GEDRAG)", () => {
+    // De wake-up light is optioneel en blokkeert niets, maar de eigenaar die zijn
+    // label op de verkeerde entiteit plakt verdient dezelfde uitleg.
+    const leeg = labelMelding({ label_exists: true, entities: [], filtered_out: 0 }, "lamp");
+    const afgevallen = labelMelding({ label_exists: true, entities: [], filtered_out: 1 }, "lamp");
+    assert.match(leeg, /nog geen lampen/);
+    assert.match(afgevallen, /zijn geen lampen/);
+    assert.notEqual(leeg, afgevallen);
+  });
+
+  it("zwijgt zodra er iets te kiezen valt, ook als er iets afviel (NIEUW GEDRAG)", () => {
+    // De positieve controle onder alle bovenstaande: `filtered_out > 0` is geen
+    // melding waard zolang er een bruikbare speaker overblijft.
+    assert.equal(
+      labelMelding({ label_exists: true, entities: [{ entity_id: "x" }], filtered_out: 3 }, "speaker"),
+      null,
+    );
   });
 
   it("verzwijgt een ontbrekend antwoord niet (NIEUW GEDRAG)", () => {
