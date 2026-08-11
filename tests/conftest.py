@@ -22,6 +22,8 @@ from custom_components.domotiapp_alarm.const import (
     DOMAIN,
     HASH_LENGTE,
     STORAGE_KEY,
+    STORAGE_MINOR_VERSION,
+    STORAGE_VERSION,
 )
 
 pytest_plugins = "pytest_homeassistant_custom_component"
@@ -115,9 +117,16 @@ def schrijf_opslag(hass_storage: dict[str, Any]):
 
     def _schrijf(
         persons: Any,
-        version: int = 1,
-        minor_version: int = 1,
+        version: int = STORAGE_VERSION,
+        minor_version: int = STORAGE_MINOR_VERSION,
     ) -> None:
+        """`version` staat standaard op de **huidige** versie.
+
+        Sinds fase 7 bestaat er een migratie, en een fixture die stilzwijgend op
+        versie 1 zou blijven staan, zou elke test die hem gebruikt ongemerkt door
+        die migratie sturen. Wie de migratie wíl toetsen, geeft `version=1` mee —
+        expliciet, want dat is dan het onderwerp.
+        """
         hass_storage[STORAGE_KEY] = {
             "version": version,
             "minor_version": minor_version,

@@ -43,6 +43,7 @@ from .const import (
     STORAGE_KEY,
     STORAGE_MINOR_VERSION,
     STORAGE_VERSION,
+    VERVALLEN_VELDEN_V1,
 )
 from .validatie import ValidatieFout, valideer_persoon
 
@@ -270,8 +271,8 @@ class AlarmStore:
     ) -> dict[str, Any] | None:
         """Werk losse velden van één wekker bij en schrijf weg.
 
-        Gebruikt door `set_enabled` en `skip_next`, en straks door de planner voor
-        `last_fired` en `last_message`. De samengestelde wekker wordt opnieuw
+        Gebruikt door `set_enabled`, door de planner voor `last_fired` en door
+        `meldingen.py` voor `last_message`. De samengestelde wekker wordt opnieuw
         gevalideerd, zodat er langs deze route niets ongeldigs in de opslag komt.
         """
         self._eis_bruikbaar(registry_id)
@@ -292,6 +293,38 @@ class AlarmStore:
         return uuid_util.random_uuid_hex()
 
 
+def _migreer_v1_naar_v2(oud: dict[str, Any]) -> dict[str, Any]:
+    """Haal de vervallen velden uit elke wekker. Puur, en gooit nooit.
+
+    **Kapotte data blijft kapot.** Is `persons` geen dict of een `alarms` geen
+    lijst, dan gaat dat stuk ongewijzigd door in plaats van hier te sneuvelen: de
+    scheiding tussen gezonde en kapotte personen is van `async_load` (SPEC 19.2),
+    en die kan zijn werk niet doen als een migratie er al overheen is gegaan. Een
+    migratie die zelf oordeelt over leesbaarheid, verplaatst dat oordeel naar een
+    plek waar de klant er niets van te zien krijgt.
+    """
+    personen = oud.get("persons")
+    if not isinstance(personen, dict):
+        return oud
+
+    nieuw_personen: dict[str, Any] = {}
+    for registry_id, blok in personen.items():
+        wekkers = blok.get("alarms") if isinstance(blok, dict) else None
+        if not isinstance(wekkers, list):
+            nieuw_personen[registry_id] = blok
+            continue
+        nieuw_personen[registry_id] = {
+            **blok,
+            "alarms": [
+                {s: w for s, w in wekker.items() if s not in VERVALLEN_VELDEN_V1}
+                if isinstance(wekker, dict)
+                else wekker
+                for wekker in wekkers
+            ],
+        }
+    return {**oud, "persons": nieuw_personen}
+
+
 class _AlarmStoreFile(Store[dict[str, Any]]):
     """`Store` met migratie (SPEC 14.6)."""
 
@@ -301,16 +334,28 @@ class _AlarmStoreFile(Store[dict[str, Any]]):
         old_minor_version: int,
         old_data: dict[str, Any],
     ) -> dict[str, Any]:
-        """Migreer oude data.
+        """Migreer oude data (SPEC 14.6).
 
-        Er bestaat nog geen oudere versie, dus er valt niets te migreren. Een
-        onbekende versie is een fout en geen aanleiding om te gokken: liever
-        falen dan een formaat half interpreteren (SPEC 14.6).
+        **Versie 1 → 2: `skip_next` gaat eruit.** Het veld is in fase 7 vervallen en
+        staat in de `.storage` van iedereen die vóór die ronde een wekker had. Het
+        stil laten staan is geen optie: `validatie.py` weigert onbekende velden en
+        zet de hele persoon op onleesbaar (SPEC 19.2 geval B). Zonder deze migratie
+        verliest een bestaande klant bij het bijwerken dus **al zijn wekkers** — en
+        hij ziet daar niets van tot de eerste ochtend dat er niets afgaat.
 
-        Een hógere `version` dan de code aankan wordt al door HA zelf afgevangen
-        met `UnsupportedStorageVersionError` (`helpers/storage.py:437-440`); deze
-        functie ziet alleen oudere versies.
+        Wat er wél blijft staan: alles wat we niet kennen. De migratie haalt
+        uitsluitend de velden weg die in `VERVALLEN_VELDEN_V1` staan; de rest gaat
+        ongemoeid door naar de validatie, die er zelf over oordeelt. Een migratie
+        die de data "opschoont" naar wat de code van vandaag verwacht, zou een
+        schrijffout in de opslag onzichtbaar maken.
+
+        Een onbekende oudere versie is een fout en geen aanleiding om te gokken:
+        liever falen dan een formaat half interpreteren. Een **hógere** `version`
+        dan de code aankan vangt HA zelf al af met `UnsupportedStorageVersionError`
+        (`helpers/storage.py:437-440`); deze functie ziet alleen oudere versies.
         """
+        if old_major_version == 1:
+            return _migreer_v1_naar_v2(old_data)
         raise NotImplementedError(
             f"Geen migratie beschikbaar van versie {old_major_version}.{old_minor_version} "
             f"naar {STORAGE_VERSION}.{STORAGE_MINOR_VERSION}"

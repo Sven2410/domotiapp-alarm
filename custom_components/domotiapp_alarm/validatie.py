@@ -41,7 +41,7 @@ GEBRUIKERSVELDEN: frozenset[str] = frozenset(
 
 # Velden die de server zelf beheert en die nooit van de kaart komen (SPEC 15.2).
 SERVERVELDEN: frozenset[str] = frozenset(
-    {"skip_next", "one_shot_at", "last_fired", "last_message"}
+    {"one_shot_at", "last_fired", "last_message"}
 )
 
 _SOUND_VELDEN: frozenset[str] = frozenset({"uri", "name", "media_type", "image"})
@@ -244,7 +244,6 @@ def valideer_wekker(waarde: Any, veld: str = "alarm") -> dict[str, Any]:
         "time": valideer_tijd(waarde["time"], f"{veld}.time"),
         "days": dagen,
         "enabled": _eis_bool(waarde["enabled"], f"{veld}.enabled"),
-        "skip_next": _eis_bool(waarde.get("skip_next", False), f"{veld}.skip_next"),
         "one_shot_at": one_shot_at,
         "sound": valideer_sound(waarde["sound"], f"{veld}.sound"),
         "speaker": speaker,

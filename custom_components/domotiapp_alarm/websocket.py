@@ -1,4 +1,4 @@
-"""De elf WebSocket-commando's (SPEC 15).
+"""De tien WebSocket-commando's (SPEC 15).
 
 **Geen enkel commando is admin-only** (SPEC 17). Dat is een bewuste keuze: klanten
 draaien Fully Kiosk met een niet-admin account en juist zij moeten hun wekkers
@@ -58,7 +58,6 @@ TYPE_GET = f"{DOMAIN}/alarms/get"
 TYPE_SAVE = f"{DOMAIN}/alarms/save"
 TYPE_SET_ENABLED = f"{DOMAIN}/alarms/set_enabled"
 TYPE_DELETE = f"{DOMAIN}/alarms/delete"
-TYPE_SKIP_NEXT = f"{DOMAIN}/alarms/skip_next"
 TYPE_SEARCH = f"{DOMAIN}/sound/search"
 TYPE_ENTITIES = f"{DOMAIN}/entities/list"
 TYPE_STOP = f"{DOMAIN}/alarms/stop"
@@ -173,7 +172,7 @@ async def _handle_save(hass, connection, msg) -> None:
     store = _store(hass)
     aangeleverd: dict[str, Any] = msg["alarm"]
 
-    # De server beheert skip_next, one_shot_at, last_fired en last_message zelf en
+    # De server beheert one_shot_at, last_fired en last_message zelf en
     # accepteert ze niet van de kaart (SPEC 15.2). Ze stil negeren zou de kaart
     # laten denken dat ze zijn overgenomen; daarom is het een fout.
     verboden = sorted(set(aangeleverd) & SERVERVELDEN)
@@ -200,7 +199,6 @@ async def _handle_save(hass, connection, msg) -> None:
     samengesteld: dict[str, Any] = {
         **aangeleverd,
         "id": alarm_id,
-        "skip_next": bool(bestaand["skip_next"]) if bestaand else False,
         "last_fired": bestaand["last_fired"] if bestaand else None,
         "last_message": bestaand["last_message"] if bestaand else None,
         "one_shot_at": None,
@@ -297,11 +295,7 @@ async def _handle_set_enabled(hass, connection, msg) -> None:
     registry_id = registry_id_van_person(hass, msg["person"])
     store = _store(hass)
     velden: dict[str, Any] = {"enabled": msg["enabled"]}
-    # Een wekker uitzetten wist skip_next: uit-en-weer-aan is de manier waarop
-    # iemand "vergeet het maar" intrekt (SPEC 15.3).
-    if not msg["enabled"]:
-        velden["skip_next"] = False
-    else:
+    if msg["enabled"]:
         velden.update(_one_shot_bij_aanzetten(hass, store, registry_id, msg["alarm_id"]))
     bijgewerkt = await store.async_werk_velden_bij(registry_id, msg["alarm_id"], velden)
     if bijgewerkt is None:
@@ -340,28 +334,11 @@ async def _handle_delete(hass, connection, msg) -> None:
     connection.send_result(msg["id"], _toestand(hass, msg["person"]))
 
 
-# --- 15.5 alarms/skip_next ---------------------------------------------
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): TYPE_SKIP_NEXT,
-        vol.Required("person"): cv.string,
-        vol.Required("alarm_id"): cv.string,
-        vol.Required("skip"): bool,
-    }
-)
-@websocket_api.async_response
-@_fout_omzetten
-async def _handle_skip_next(hass, connection, msg) -> None:
-    registry_id = registry_id_van_person(hass, msg["person"])
-    bijgewerkt = await _store(hass).async_werk_velden_bij(
-        registry_id, msg["alarm_id"], {"skip_next": msg["skip"]}
-    )
-    if bijgewerkt is None:
-        raise PersonNietGevonden(f"wekker {msg['alarm_id']} bestaat niet bij {msg['person']}")
-    await planner.async_herplan(hass)
-    connection.send_result(msg["id"], _toestand(hass, msg["person"]))
+# --- 15.5 is VERVALLEN (alarms/skip_next, fase 7) ----------------------
+#
+# De nummering van 15.6 en verder blijft staan. Doorschuiven zou elke verwijzing
+# in de code, de rapporten en de commitgeschiedenis stil laten wijzen naar een
+# ander commando dan bedoeld — en er staan er tientallen.
 
 
 # --- 15.6 sound/search -------------------------------------------------
@@ -568,12 +545,12 @@ async def _handle_clear_message(hass, connection, msg) -> None:
     waarde aan — er is geen veld waarin de kaart een melding, een `kind` of een
     `severity` kan meesturen. Het zet `last_message` onvoorwaardelijk op `None` en
     kan dus maar één ding: wissen wat de server zelf heeft geschreven. De regel uit
-    SPEC 15.2 blijft daarmee onaangetast: `skip_next`, `one_shot_at`, `last_fired`
+    SPEC 15.2 blijft daarmee onaangetast: `one_shot_at`, `last_fired`
     en `last_message` komen nooit met een waarde van de kaart.
 
     Herplannen gebeurt zoals bij elke opslagwijziging via een commando (SPEC 13.5).
     Het is hier feitelijk een lege ronde — een melding wissen verandert `enabled`,
-    `time`, `days`, `skip_next` noch `last_fired` — maar de uitzondering zou
+    `time`, `days` noch `last_fired` — maar de uitzondering zou
     duurder zijn dan de ronde: dan moet iemand bij de volgende wijziging opnieuw
     beoordelen of dit commando de planning raakt.
     """
@@ -640,7 +617,6 @@ _COMMANDOS = (
     _handle_save,
     _handle_set_enabled,
     _handle_delete,
-    _handle_skip_next,
     _handle_search,
     _handle_entities,
     _handle_stop,
@@ -652,7 +628,7 @@ _COMMANDOS = (
 
 @callback
 def async_register(hass: HomeAssistant) -> None:
-    """Registreer de elf commando's, één keer per HA-run.
+    """Registreer de tien commando's, één keer per HA-run.
 
     HA kent geen `async_unregister_command`, dus een tweede registratie zou de
     eerste overschrijven. De vlag voorkomt dat bij een tweede config entry.

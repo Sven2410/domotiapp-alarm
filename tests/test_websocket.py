@@ -83,7 +83,6 @@ async def test_save_dan_get_levert_dezelfde_data(
 
     wekker = na_save[0]
     # De server heeft de boekhouding zelf gezet.
-    assert wekker["skip_next"] is False
     assert wekker["last_fired"] is None
     assert wekker["last_message"] is None
     # Herhalende wekker: geen one_shot_at.
@@ -192,7 +191,6 @@ async def test_servervelden_worden_geweigerd(
     """
     client = await hass_ws_client(hass)
     for veld, waarde in (
-        ("skip_next", True),
         ("last_fired", "2026-08-10T06:45:00+02:00"),
         ("last_message", None),
         ("one_shot_at", "2026-08-11T06:45:00+02:00"),
@@ -430,10 +428,49 @@ async def test_lamp_zonder_label_wordt_geweigerd(
 # --- 15.3, 15.4, 15.5 --------------------------------------------------
 
 
-async def test_set_enabled_en_skip_next(
+async def test_set_enabled_zet_uit_en_laat_next_fire_vervallen(
     hass: HomeAssistant, hass_ws_client, omgeving
 ) -> None:
-    """NIEUW GEDRAG. Uitzetten wist `skip_next` (SPEC 15.3)."""
+    """NIEUW GEDRAG. Uitzetten haalt de wekker uit de planning (SPEC 15.3).
+
+    Deze test toetste tot fase 7 ook dat uitzetten `skip_next` wiste. Dat veld is
+    vervallen; wat overblijft is de eigenschap die er werkelijk toe doet — een
+    uitgezette wekker levert geen `next_fire` meer op, en dat is wat de kaart
+    toont.
+    """
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(
+        client,
+        {"type": f"{DOMAIN}/alarms/save", "person": PERSON_ENTITY_ID, "alarm": geldige_wekker()},
+    )
+    alarm_id = antwoord["result"]["alarms"][0]["id"]
+    assert antwoord["result"]["next_fire"] is not None, "positieve controle vooraf"
+
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/set_enabled",
+            "person": PERSON_ENTITY_ID,
+            "alarm_id": alarm_id,
+            "enabled": False,
+        },
+    )
+    assert antwoord["success"], antwoord
+    assert antwoord["result"]["alarms"][0]["enabled"] is False
+    assert antwoord["result"]["next_fire"] is None
+
+
+async def test_skip_next_bestaat_niet_meer(
+    hass: HomeAssistant, hass_ws_client, omgeving
+) -> None:
+    """NIEUW GEDRAG. Het commando is in fase 7 vervallen (SPEC 15.5).
+
+    Verplicht geval 2 van deze ronde. Het onderscheid dat deze test maakt is
+    scherper dan "hij doet niets": HA antwoordt met **`unknown_command`**, en dat
+    is het bewijs dat de handler niet meer geregistreerd staat. Zou hij nog
+    bestaan maar stilzwijgend niets doen, dan kwam er `success` terug en zou een
+    oude kaart denken dat het gelukt was.
+    """
     client = await hass_ws_client(hass)
     antwoord = await _stuur(
         client,
@@ -450,23 +487,44 @@ async def test_set_enabled_en_skip_next(
             "skip": True,
         },
     )
-    assert antwoord["success"], antwoord
-    assert antwoord["result"]["alarms"][0]["skip_next"] is True
+    assert not antwoord["success"]
+    assert antwoord["error"]["code"] == "unknown_command", antwoord["error"]
 
+
+async def test_skip_next_is_ook_geen_veld_meer(
+    hass: HomeAssistant, hass_ws_client, omgeving
+) -> None:
+    """NIEUW GEDRAG. Het veld is uit het schema (SPEC 14.2).
+
+    Twee kanten, en ze zijn allebei nodig. `alarms/save` moet het **weigeren**
+    (het is geen gebruikersveld), en `alarms/get` mag het **niet teruggeven** —
+    anders zou een kaart die op het veld vertrouwt stil blijven werken en pas bij
+    een volgende ronde omvallen.
+    """
+    client = await hass_ws_client(hass)
     antwoord = await _stuur(
         client,
         {
-            "type": f"{DOMAIN}/alarms/set_enabled",
+            "type": f"{DOMAIN}/alarms/save",
             "person": PERSON_ENTITY_ID,
-            "alarm_id": alarm_id,
-            "enabled": False,
+            "alarm": {**geldige_wekker(), "skip_next": True},
         },
     )
+    assert not antwoord["success"]
+    assert antwoord["error"]["code"] == "invalid_format"
+    # En de **reden** klopt ook. Zou `skip_next` nog in `SERVERVELDEN` staan, dan
+    # zegt de fout "deze velden beheert de server zelf" over een veld dat niet
+    # bestaat — dezelfde soort onwaarheid als de meldingen uit fase 6 en 6b, nu in
+    # een foutmelding. Gevonden in de mutatieproef van fase 7 (M7).
+    assert "onbekende velden" in antwoord["error"]["message"], antwoord["error"]
+    assert "beheert de server zelf" not in antwoord["error"]["message"]
+
+    antwoord = await _stuur(
+        client,
+        {"type": f"{DOMAIN}/alarms/save", "person": PERSON_ENTITY_ID, "alarm": geldige_wekker()},
+    )
     assert antwoord["success"], antwoord
-    wekker = antwoord["result"]["alarms"][0]
-    assert wekker["enabled"] is False
-    assert wekker["skip_next"] is False, "uitzetten hoort skip_next te wissen"
-    assert antwoord["result"]["next_fire"] is None
+    assert "skip_next" not in antwoord["result"]["alarms"][0]
 
 
 async def _verlopen_eenmalige(hass: HomeAssistant, client, registry_id: str) -> str:
@@ -705,25 +763,26 @@ async def test_save_met_onbekende_id_geeft_not_found(
 async def test_save_werkt_bestaande_wekker_bij_en_bewaart_boekhouding(
     hass: HomeAssistant, hass_ws_client, omgeving
 ) -> None:
-    """Een update behoudt `skip_next` (SPEC 15.2).
+    """Een update behoudt `last_fired` (SPEC 15.2).
 
     NIEUW GEDRAG. Een implementatie die de boekhouding op de beginwaarde zet bij
-    elke save, zou een overgeslagen wekker stil weer laten afgaan.
+    elke save, zou een wekker die vanochtend al is afgegaan vanavond opnieuw
+    laten afgaan — de bewaker van SPEC 13.4 stap 3 vergelijkt op `last_fired`.
+
+    Tot fase 7 toetste deze test op `skip_next`. Dat veld is vervallen; de
+    eigenschap die hij bewaakt is dezelfde en `last_fired` draagt hem nu.
     """
+    from custom_components.domotiapp_alarm.const import DATA_STORE
+
     client = await hass_ws_client(hass)
     antwoord = await _stuur(
         client,
         {"type": f"{DOMAIN}/alarms/save", "person": PERSON_ENTITY_ID, "alarm": geldige_wekker()},
     )
     alarm_id = antwoord["result"]["alarms"][0]["id"]
-    await _stuur(
-        client,
-        {
-            "type": f"{DOMAIN}/alarms/skip_next",
-            "person": PERSON_ENTITY_ID,
-            "alarm_id": alarm_id,
-            "skip": True,
-        },
+    gezet = "2026-08-10T06:45:00+02:00"
+    await hass.data[DOMAIN][DATA_STORE].async_werk_velden_bij(
+        omgeving, alarm_id, {"last_fired": gezet}
     )
 
     antwoord = await _stuur(
@@ -737,7 +796,7 @@ async def test_save_werkt_bestaande_wekker_bij_en_bewaart_boekhouding(
     assert antwoord["success"], antwoord
     wekker = antwoord["result"]["alarms"][0]
     assert wekker["name"] == "Werk (aangepast)"
-    assert wekker["skip_next"] is True, "skip_next moet bewaard blijven"
+    assert wekker["last_fired"] == gezet, "last_fired moet bewaard blijven"
     assert len(antwoord["result"]["alarms"]) == 1, "geen tweede wekker ernaast"
 
 
@@ -1001,9 +1060,9 @@ async def test_clear_message_laat_de_andere_servervelden_staan(
 ) -> None:
     """Wissen raakt alleen `last_message` (SPEC 15.10).
 
-    NIEUW GEDRAG. `skip_next` en `last_fired` dragen respectievelijk de overslag en
-    de inhaalslag (SPEC 13.4). Een commando dat ze en passant meewist, zou een
-    wekker die vanochtend al is afgegaan vanavond opnieuw laten afgaan.
+    NIEUW GEDRAG. `last_fired` draagt de inhaalslag (SPEC 13.4). Een commando dat
+    hem en passant meewist, zou een wekker die vanochtend al is afgegaan vanavond
+    opnieuw laten afgaan.
     """
     from custom_components.domotiapp_alarm.const import DATA_STORE
 
@@ -1011,9 +1070,7 @@ async def test_clear_message_laat_de_andere_servervelden_staan(
     store = hass.data[DOMAIN][DATA_STORE]
     alarm_id, _ = await _wekker_met_melding(client, store, omgeving)
     gezet = "2026-08-10T06:45:00.312000+02:00"
-    await store.async_werk_velden_bij(
-        omgeving, alarm_id, {"last_fired": gezet, "skip_next": True}
-    )
+    await store.async_werk_velden_bij(omgeving, alarm_id, {"last_fired": gezet})
 
     antwoord = await _stuur(
         client,
@@ -1027,7 +1084,6 @@ async def test_clear_message_laat_de_andere_servervelden_staan(
     wekker = antwoord["result"]["alarms"][0]
     assert wekker["last_message"] is None
     assert wekker["last_fired"] == gezet, "last_fired draagt de inhaalslag"
-    assert wekker["skip_next"] is True, "de overslag is een aparte keuze"
 
 
 async def test_clear_message_kan_geen_melding_zetten(
@@ -1155,12 +1211,6 @@ async def test_niet_admin_mag_alle_tien_commandos(
             "person": PERSON_ENTITY_ID,
             "alarm_id": alarm_id,
             "enabled": True,
-        },
-        {
-            "type": f"{DOMAIN}/alarms/skip_next",
-            "person": PERSON_ENTITY_ID,
-            "alarm_id": alarm_id,
-            "skip": False,
         },
         {"type": f"{DOMAIN}/entities/list"},
         {"type": f"{DOMAIN}/alarms/stop", "person": PERSON_ENTITY_ID, "alarm_id": alarm_id},

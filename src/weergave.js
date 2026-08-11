@@ -21,7 +21,6 @@ const DAGEN_KORT = ["ma", "di", "wo", "do", "vr", "za", "zo"];
 export const TEKST_GEEN_WEKKERS = "Geen wekkers ingesteld";
 export const TEKST_EENMALIG = "Eenmalig";
 export const TEKST_AFGELOPEN = "Eenmalig — afgelopen";
-export const TEKST_OVERGESLAGEN = "Morgen overgeslagen";
 export const TEKST_GEEN_WEKKER_ACTIEF = "Geen wekker actief";
 export const TEKST_STOPPEN = "Stoppen";
 
@@ -69,20 +68,15 @@ export function isAfgelopen(wekker, nuMs) {
 }
 
 /**
- * De regel onder de naam: herhaaldagen, "Eenmalig", of een van de twee
- * bijzondere toestanden (SPEC 3.2 en 14.5).
+ * De regel onder de naam: herhaaldagen, "Eenmalig", of "Eenmalig — afgelopen"
+ * (SPEC 3.2 en 14.5).
  *
- * De volgorde is vastgelegd door wat waar is en niet door voorkeur:
- * "afgelopen" gaat vóór "overgeslagen", want een wekker waarvan het moment al
- * voorbij is gaat sowieso niet meer af — dan is "Morgen overgeslagen" een
- * belofte over een morgen die niet komt.
+ * Tot fase 7 stond hier ook "Morgen overgeslagen". Met `skip_next` is die
+ * toestand vervallen; er zijn er nog twee, en "afgelopen" wint van de dagen.
  */
 export function subtitel(wekker, nuMs) {
   if (isAfgelopen(wekker, nuMs)) {
     return TEKST_AFGELOPEN;
-  }
-  if (wekker?.skip_next) {
-    return TEKST_OVERGESLAGEN;
   }
   return dagenTekst(wekker?.days);
 }

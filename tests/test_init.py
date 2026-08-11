@@ -159,6 +159,8 @@ async def test_geen_tweede_resource_bij_ongeladen_collectie(
     aangeraakt. Dat is precies de situatie bij een herstart van Home Assistant.
     """
     oude_url = f"{CARD_URL_PATH}?v=111111111111"
+    # De versie van **Lovelace's** resourceopslag, niet die van ons: die staat op 1
+    # en heeft met onze schemaversie niets te maken.
     hass_storage[RESOURCE_STORAGE_KEY] = {
         "version": 1,
         "minor_version": 1,

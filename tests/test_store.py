@@ -17,7 +17,7 @@ from homeassistant.components.media_player import MediaPlayerEntityFeature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.domotiapp_alarm.const import DOMAIN
+from custom_components.domotiapp_alarm.const import DATA_STORE, DOMAIN
 from custom_components.domotiapp_alarm.store import (
     AlarmStore,
     OpslagOnbruikbaar,
@@ -44,13 +44,129 @@ def volledige_wekker(alarm_id: str = "a" * 32, **overschrijf: Any) -> dict[str, 
     wekker: dict[str, Any] = {
         **geldige_wekker(),
         "id": alarm_id,
-        "skip_next": False,
         "one_shot_at": None,
         "last_fired": None,
         "last_message": None,
     }
     wekker.update(overschrijf)
     return wekker
+
+
+# --- de migratie van versie 1 naar 2 (SPEC 14.6) -----------------------
+
+
+async def test_een_opslag_met_skip_next_migreert_en_de_wekker_blijft_werken(
+    hass: HomeAssistant, hass_ws_client, schrijf_opslag, lees_opslag
+) -> None:
+    """NIEUW GEDRAG, en het belangrijkste geval van fase 7.
+
+    `skip_next` staat in de `.storage` van iedereen die vóór deze ronde een wekker
+    had. De nieuwe `validatie.py` weigert onbekende velden, dus zonder migratie
+    wordt zo'n persoon **onleesbaar** gemarkeerd (SPEC 19.2 geval B) en verliest de
+    klant al zijn wekkers — zonder dat hij daar iets van ziet tot de eerste ochtend
+    dat er niets afgaat.
+
+    Deze test doet alle drie de dingen die dan moeten kloppen:
+
+    1. de persoon is **niet** corrupt;
+    2. de wekker komt gewoon uit `alarms/get`, met zijn eigen naam en tijd, en er
+       is een `next_fire` — hij doet het dus echt en staat niet alleen in een lijst;
+    3. `skip_next` is **weg**, ook op schijf. Blijft hij staan, dan valt de
+       volgende schrijfronde alsnog om.
+    """
+    registry_id = registreer_person(hass)
+    maak_speaker(hass, features=GOEDE_FEATURES)
+    # Zoals het er bij de eigenaar staat: versie 1, mét skip_next.
+    schrijf_opslag(
+        {registry_id: {"alarms": [{**volledige_wekker(), "skip_next": True}]}},
+        version=1,
+        minor_version=1,
+    )
+
+    await zet_integratie_op(hass)
+    client = await hass_ws_client(hass)
+
+    await client.send_json_auto_id(
+        {"type": f"{DOMAIN}/alarms/get", "person": PERSON_ENTITY_ID}
+    )
+    antwoord = await client.receive_json()
+    assert antwoord["success"], antwoord
+    wekkers = antwoord["result"]["alarms"]
+    assert len(wekkers) == 1, "de wekker hoort de migratie te overleven"
+    assert wekkers[0]["name"] == geldige_wekker()["name"]
+    assert wekkers[0]["time"] == geldige_wekker()["time"]
+    assert "skip_next" not in wekkers[0]
+    assert antwoord["result"]["next_fire"] is not None, "hij wordt ook echt gepland"
+
+    op_schijf = lees_opslag()
+    assert op_schijf["version"] == 2
+    assert op_schijf["minor_version"] == 1
+    bewaard = op_schijf["data"]["persons"][registry_id]["alarms"][0]
+    assert "skip_next" not in bewaard, "ook op schijf hoort het veld weg te zijn"
+
+
+async def test_de_migratie_laat_alles_behalve_skip_next_met_rust(
+    hass: HomeAssistant, schrijf_opslag, lees_opslag
+) -> None:
+    """NIEUW GEDRAG. Een migratie die "opschoont" verbergt een schrijffout.
+
+    De positieve controle bij de test hierboven: alleen `skip_next` gaat eruit. Een
+    implementatie die de wekker herbouwt uit de velden die de code van vandaag
+    kent, zou hier een onbekend veld stil opeten — en dan zou een schrijffout van
+    een latere versie nooit als geval B boven komen.
+
+    De persoon is hier met opzet **kapot** (`vreemd_veld`): dat is de enige manier
+    om te zien wat de migratie doorlaat, want een gezonde persoon gaat daarna door
+    de validatie die het veld alsnog zou weigeren.
+    """
+    registry_id = registreer_person(hass)
+    schrijf_opslag(
+        {registry_id: {"alarms": [{**volledige_wekker(), "skip_next": True, "vreemd_veld": 1}]}},
+        version=1,
+        minor_version=1,
+    )
+
+    await zet_integratie_op(hass)
+
+    bewaard = lees_opslag()["data"]["persons"][registry_id]["alarms"][0]
+    assert "skip_next" not in bewaard, "het vervallen veld gaat eruit"
+    assert bewaard["vreemd_veld"] == 1, "de rest blijft letterlijk staan"
+    assert hass.data[DOMAIN][DATA_STORE].is_corrupt(registry_id), (
+        "een onbekend veld hoort nog steeds geval B te zijn"
+    )
+
+
+@pytest.mark.parametrize(
+    "persons",
+    [
+        pytest.param("onzin", id="geen-object"),
+        pytest.param({"abc": {"alarms": "geen lijst"}}, id="alarms-geen-lijst"),
+        pytest.param({"abc": "geen object"}, id="persoon-geen-object"),
+        # Een geldige alarms-lijst met iets erin dat geen wekker is. Gevonden in de
+        # mutatieproef van fase 7 (M16): het vervangen van zo'n item door een leeg
+        # object bleef ongestraft, en dan verliest de admin precies het bewijs dat
+        # hem vertelt wat er stuk is (SPEC 19.2 geval B).
+        pytest.param({"abc": {"alarms": ["geen wekker", 42]}}, id="wekker-geen-object"),
+    ],
+)
+async def test_de_migratie_valt_niet_om_op_kapotte_data(
+    hass: HomeAssistant, schrijf_opslag, lees_opslag, persons: Any
+) -> None:
+    """NIEUW GEDRAG. Kapotte data blijft kapot, en de migratie gaat er niet over.
+
+    De scheiding tussen gezonde en kapotte personen is van `async_load`
+    (SPEC 19.2). Zou de migratie hier gooien, dan komt de integratie niet eens
+    op en ziet de admin een stacktrace in plaats van de repair issue die hem
+    vertelt wát er stuk is.
+    """
+    registreer_person(hass)
+    schrijf_opslag(persons, version=1, minor_version=1)
+
+    await zet_integratie_op(hass)
+
+    # De data is ongewijzigd doorgelaten; alleen het versienummer is opgehoogd.
+    assert lees_opslag()["data"]["persons"] == persons
+    assert lees_opslag()["version"] == 2
 
 
 # --- geval B: één kapotte persoon (SPEC 19.2) --------------------------

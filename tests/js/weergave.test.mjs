@@ -23,7 +23,6 @@ import {
   TEKST_GEEN_WEKKERS,
   TEKST_GEEN_WEKKER_ACTIEF,
   TEKST_MELDING_ZONDER_TEKST,
-  TEKST_OVERGESLAGEN,
   dagenTekst,
   isAfgelopen,
   kopTekst,
@@ -44,7 +43,6 @@ function wekker(velden = {}) {
     time: "06:45",
     days: [1, 2, 3, 4, 5],
     enabled: true,
-    skip_next: false,
     one_shot_at: null,
     sound: { uri: "somafm://radio/x", name: "X", media_type: "radio", image: null },
     speaker: "media_player.slaapkamer",
@@ -112,15 +110,11 @@ describe("isAfgelopen (SPEC 14.5)", () => {
 
 describe("subtitel (SPEC 3.2 en 14.5)", () => {
   it("toont de herhaaldagen als er niets bijzonders is (NIEUW GEDRAG)", () => {
-    // De positieve controle onder de drie tests hierna: zonder deze zou een
-    // implementatie die áltijd "Morgen overgeslagen" teruggeeft er doorheen
+    // De positieve controle onder de test hierna: zonder deze zou een
+    // implementatie die áltijd "Eenmalig — afgelopen" teruggeeft er doorheen
     // komen.
     assert.equal(subtitel(wekker(), NU), "ma di wo do vr");
     assert.equal(subtitel(wekker({ days: [], one_shot_at: STRAKS }), NU), TEKST_EENMALIG);
-  });
-
-  it("toont Morgen overgeslagen bij skip_next (NIEUW GEDRAG)", () => {
-    assert.equal(subtitel(wekker({ skip_next: true }), NU), TEKST_OVERGESLAGEN);
   });
 
   it("toont Eenmalig — afgelopen als het moment voorbij is (NIEUW GEDRAG)", () => {
@@ -130,12 +124,13 @@ describe("subtitel (SPEC 3.2 en 14.5)", () => {
     );
   });
 
-  it("laat afgelopen vóór overgeslagen gaan (NIEUW GEDRAG)", () => {
-    // "Morgen overgeslagen" is een belofte over een morgen die niet komt: deze
-    // wekker gaat sowieso niet meer af. De volgorde in de implementatie is dus
-    // gedrag en geen smaak.
+  it("noemt een afgelopen wekker niet alsnog naar zijn dagen (REGRESSIEWACHT)", () => {
+    // Vóór fase 7 stond hier "afgelopen gaat vóór overgeslagen". Overslaan is
+    // vervallen, maar de volgordevraag blijft: `isAfgelopen` moet vóór
+    // `dagenTekst` komen, anders krijgt een verlopen eenmalige wekker "Eenmalig"
+    // in plaats van "Eenmalig — afgelopen".
     assert.equal(
-      subtitel(wekker({ days: [], one_shot_at: EERDER, skip_next: true }), NU),
+      subtitel(wekker({ days: [], one_shot_at: EERDER }), NU),
       TEKST_AFGELOPEN,
     );
   });
