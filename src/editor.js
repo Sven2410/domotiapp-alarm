@@ -163,6 +163,10 @@ export class DomotiappAlarmEditor extends LitElement {
         speaker: this._concept.speaker,
         sound: kleedGeluidUit(this._concept.sound),
         volume_pct: this._concept.volume_pct,
+        // Sinds fase 8 gaat de lamp mee (SPEC 5.4): wie 100 % instelt wil zien of
+        // dat niet te fel is. `null` als er geen lamp gekozen is — dan raakt de
+        // server er geen aan.
+        light: this._concept.light ?? null,
       });
       this._speelt = true;
     } catch (fout) {
@@ -273,6 +277,15 @@ export class DomotiappAlarmEditor extends LitElement {
     :host {
       --domotiapp-accent: ${unsafeCSS(ACCENT)};
       display: block;
+      /* De editor meet zich aan zijn EIGEN breedte, niet aan die van het venster.
+         Een kaart in een bubble pop-up is smal terwijl het venster breed is, dus
+         een media query zou hier precies het verkeerde meten. Gemeten in fase 8:
+         container queries worden ondersteund (CSS.supports gaf true).
+
+         Met een naam, om dezelfde reden als bij de kaart: een naamloze query
+         pakt de dichtstbijzijnde container-voorouder, en dat kan er een van HA
+         zijn. */
+      container: domotiapp-editor / inline-size;
     }
     .blok {
       padding: 12px 16px;
@@ -314,6 +327,17 @@ export class DomotiappAlarmEditor extends LitElement {
     input[type="time"] {
       font-size: 24px;
       font-variant-numeric: tabular-nums;
+      /* Iets meer ruimte links en rechts dan de andere velden: de cijfers zijn hier
+         24 px en gaan er anders optisch tegenaan liggen. De browser tekent dit veld
+         zelf, en op een telefoon is dat een breder ding dan op een desktop. */
+      padding: 10px 12px;
+    }
+    /* Onder de 300 px wordt het veld zelf smal genoeg dat de native tijdweergave
+       eronder kan lijden. Dan liever kleinere cijfers dan afgesneden cijfers. */
+    @container domotiapp-editor (max-width: 300px) {
+      input[type="time"] {
+        font-size: 20px;
+      }
     }
     input[type="range"] {
       width: 100%;
@@ -341,13 +365,20 @@ export class DomotiappAlarmEditor extends LitElement {
       border-color: var(--domotiapp-accent);
       color: #fff;
     }
+    /* Wikkelen, om dezelfde reden als de voetregel. Gemeten in fase 8 bij een
+       kaart van 244 px: het zoekveld werd tot 27 px platgeknepen tussen de
+       soortkiezer (127 px) en het vergrootglas (42 px) — je zag niet meer wat je
+       typte. De ondergrens van 8em zorgt dat het veld leesbaar blijft en dat de
+       rest naar de volgende regel gaat in plaats van dat het veld verdwijnt. */
     .rij {
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
     }
     .rij > :first-child {
-      flex: 1;
+      flex: 1 1 8em;
+      min-width: 8em;
     }
     button.knop {
       border: 1px solid var(--divider-color);
@@ -452,11 +483,28 @@ export class DomotiappAlarmEditor extends LitElement {
       color: var(--primary-text-color);
       font-size: var(--ha-font-size-s, 12px);
     }
+    /* WIKKELEN, en dat is de kern van de reparatie uit fase 8.
+       Er staan drie knoppen zodra een voorbeeld speelt, en die pasten niet in een
+       smalle kaart. Met justify-content:flex-end spilt de overloop naar LINKS,
+       dus de knop Voorbeeld stoppen liep de kaart uit — gemeten: 67 px buiten
+       de linkerrand bij een kaart van 244 px.
+
+       Waarom wikkelen en niet een korter label: een korter label (Stoppen)
+       verliest betekenis naast Annuleren en Opslaan — stoppen wát? — en het helpt
+       maar tot de volgende lettergrootte. Wikkelen werkt bij elke breedte en bij
+       elke tekstgrootte, ook die van een gebruiker die groot leest.
+
+       flex:0 0 auto erbij: zonder dat knijpt flexbox de knoppen eerst plat
+       vóór hij wikkelt, en dan staat de tekst tegen de rand van zijn eigen knop. */
     .voet {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
       justify-content: flex-end;
       padding: 12px 16px;
+    }
+    .voet button {
+      flex: 0 0 auto;
     }
     .voet .voorbeeld {
       margin-right: auto;

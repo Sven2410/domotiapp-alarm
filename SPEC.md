@@ -351,6 +351,8 @@ Het gedrag dat vastligt:
 
 - De knop **speelt het gekozen geluid op de gekozen speaker**, met de waarden
   zoals ze **nu in de editor staan** (nog niet opgeslagen).
+- De knop **zet ook de wake-up light aan**, op de ingestelde helderheid, als er
+  een lamp is gekozen. Zie hieronder.
 - Er is een **stopknop** zolang het voorbeeld speelt.
 - **Elke manier van de editor sluiten stopt het voorbeeld**: opslaan,
   annuleren, de X, Escape, wegklikken.
@@ -366,6 +368,52 @@ Het gedrag dat vastligt:
    knop onbruikbaar. Dat de oploop zelf werkt is in fase 0b gemeten.
 2. **Het volume van de speaker wordt na het voorbeeld teruggezet** naar wat het
    was, volgens [sectie 9.5](#95-het-volume-wordt-teruggezet).
+
+#### De wake-up light hoort erbij
+
+*Toegevoegd in fase 8, op verzoek van de eigenaar. Tot dan speelde het voorbeeld
+alleen het geluid en schreef deze sectie dat ook zo voor.*
+
+Wie 100 % helderheid instelt wil **zien** of dat niet te fel is, precies zoals hij
+het volume wil horen. Een voorbeeld dat de helft van de wekker weglaat, is geen
+voorbeeld.
+
+De lamp gaat aan op de helderheid die **nu in de editor staat**, met dezelfde
+aanroep als bij een wekker ([sectie 12](#12-de-wake-up-light)): `light.turn_on`
+met `brightness_pct`, geen `transition`. Is er **geen** lamp gekozen, dan wordt er
+geen enkele lamp aangeraakt.
+
+De lamp wordt **gekeurd zoals bij het opslaan**: alleen een entiteit met het label
+`Verlichting Wekker` mag aan. Zonder die controle zou het voorbeeld een
+afstandsbediening voor elke lamp in huis zijn in plaats van voor de wekker.
+
+**Bij het stoppen gaat de lamp terug zoals hij stond**, en dat is het enige punt
+waarop het voorbeeld bewust van een echte wekker afwijkt — die laat de lamp aan
+(sectie 12). Bij een wekker word je wakker; bij een voorbeeld wil je je kamer niet
+op vol licht achterlaten omdat je even iets uitprobeerde. Dezelfde redenering als
+het volume in [9.5](#95-het-volume-wordt-teruggezet), en dezelfde drie regels:
+
+1. de stand wordt **gelezen vóór** hij gezet wordt — erna lees je je eigen waarde
+   terug;
+2. was hij **niet te lezen** (de lamp is weg of `unavailable`), dan wordt er
+   **niets** teruggezet. Nooit een verzonnen waarde;
+3. is er **geen lamp gekozen**, dan is er ook niets van ons om terug te zetten.
+
+**Wat er bewaard wordt is minimaal:** aan of uit, en de helderheid. Geen kleur,
+geen kleurtemperatuur, geen effect. Die bewaren zou betekenen dat we ze ook moeten
+kunnen terugzetten, en een half herstelde kleur is erger dan een helderheid die
+terugkomt. Wie een gekleurde lamp als wake-up light gebruikt, houdt na een
+voorbeeld zijn kleur en krijgt de helderheid van vóór het voorbeeld terug.
+
+**Faalt de lamp, dan stopt het voorbeeld niet.** Het geluid is het voorbeeld, net
+zoals het geluid de wekker is (sectie 12). Er komt een `WARNING` in het log en
+verder gaat alles door.
+
+**De lamp gaat aan ná het geluid**, en dat is de omgekeerde volgorde van
+[9.1](#91-de-volgorde). Daar staat de lamp vóór het geluid omdat `play_media`
+2,1–2,6 s blokkeert en het licht niet mag wachten op iets dat kan mislukken. Bij
+een voorbeeld ligt het andersom: mislukt het afspelen, dan wordt het voorbeeld
+geweigerd, en dan hoort er geen lamp te hebben geflitst die meteen weer uitgaat.
 
 ### 5.5 Wat de editor bij openen doet
 
@@ -1403,6 +1451,9 @@ Zie het veld `last_message` in [sectie 14.2](#142-het-schema).
 - De lamp gaat aan **OP de wektijd**, niet ervoor. **Geen opbouw** — geen
   langzaam oplopende helderheid, geen transition.
 - De lamp **blijft aan** nadat de wekker gestopt is. De klant zet hem zelf uit.
+  Dat geldt voor een **wekker**. Het **voorbeeld** uit
+  [5.4](#54-de-voorbeeldknop) doet het omgekeerde en zet de lamp terug zoals hij
+  stond — bij een wekker word je wakker, bij een voorbeeld probeer je iets uit.
 
 Aanroep: `light.turn_on` met `entity_id` en `brightness_pct`. **VOORSTEL:** geen
 `transition` meesturen, want "geen opbouw" is de eis en een expliciete

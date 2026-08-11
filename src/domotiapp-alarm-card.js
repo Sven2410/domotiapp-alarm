@@ -414,6 +414,22 @@ class DomotiappAlarmCard extends LitElement {
        verbiedt. De waarde is onze eigen constante en komt nergens van buiten. */
     :host {
       --domotiapp-accent: ${unsafeCSS(ACCENT)};
+      /* De kaart meet zich aan zijn eigen breedte en niet aan het venster: in een
+         bubble pop-up is de kaart smal terwijl het venster breed is. Gemeten in
+         fase 8 bij 244 px: de naam werd tot een enkele letter platgeknepen en de
+         dagen stapelden verticaal.
+
+         display:block is hier GEEN opmaakvoorkeur maar een voorwaarde. Gemeten:
+         HA geeft de kaarthost display:inline, en op een inline element doet
+         container-type niets — de host wordt dan geen query-container en de
+         regels hieronder komen nooit aan bod.
+
+         En de container heeft een NAAM. Zonder naam kiest de browser de
+         dichtstbijzijnde container-voorouder, en dat kan er een van HA zelf zijn;
+         dan hangt onze opmaak af van de afmeting van iets waar wij niet over
+         gaan. */
+      display: block;
+      container: domotiapp-kaart / inline-size;
     }
     /* Geen overflow:hidden op de kaart: de stopknop houdt daarom zelf de
        hoekafronding van de kaart. Er staat sinds fase 7 niets meer boven de kaart
@@ -458,6 +474,20 @@ class DomotiappAlarmCard extends LitElement {
       color: var(--primary-text-color);
       font-variant-numeric: tabular-nums;
       min-width: 82px;
+      flex: 0 0 auto;
+    }
+    /* Onder de 300 px is er geen ruimte voor 28 px cijfers naast een naam, een
+       schakelaar en een prullenbak. Kleinere cijfers zijn dan beter dan een naam
+       van een letter. */
+    @container domotiapp-kaart (max-width: 300px) {
+      .tijd {
+        font-size: 22px;
+        min-width: 62px;
+      }
+      .rij {
+        gap: 8px;
+        padding: 10px 12px;
+      }
     }
     /* De onderste regel van de kaart krijgt geen streep: er staat niets onder om
        van te scheiden. Sinds de kopbalk boven staat is dat de laatste wekkerrij, en

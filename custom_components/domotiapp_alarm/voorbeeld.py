@@ -42,9 +42,24 @@ na `VOORBEELD_MAX_MINUTEN`. Dat is dezelfde gedachte als de stoptimer van SPEC
   is niet wat de klant beoordeelt. Meesturen zou er wél een risico bij halen: bij
   een provider zonder `SIMILAR_TRACKS` geeft MA HTTP 500 en speelt er niets
   (SPEC 8.3.1) — dan lijkt de voorbeeldknop stuk terwijl het geluid prima is.
-- **Geen wake-up light.** De lamp hoort bij de wekker, niet bij het beoordelen
-  van een geluid, en hem aanzetten zou een handeling zijn die de klant niet heeft
-  gevraagd.
+## De wake-up light hoort er WEL bij, sinds fase 8
+
+Tot dan deed het voorbeeld alleen het geluid, en SPEC 5.4 schreef dat ook zo voor.
+De eigenaar verwacht iets anders, en hij heeft gelijk: wie 100 % helderheid instelt
+wil zien of dat niet te fel is, precies zoals hij het volume wil horen. Een
+voorbeeld dat de helft van de wekker weglaat, is geen voorbeeld.
+
+**Bij het stoppen gaat de lamp terug**, en dat wijkt af van een echte wekker — die
+laat hem aan (SPEC 12). Dat verschil is bewust: bij een wekker word je wakker, bij
+een voorbeeld wil je je kamer niet op vol licht achterlaten omdat je even iets
+uitprobeerde. Het is dezelfde redenering als het volume in SPEC 9.5.
+
+**Wat er van de lamp bewaard wordt is minimaal**: aan of uit, en de helderheid.
+Geen kleur, geen kleurtemperatuur, geen effect. Die bewaren zou betekenen dat we ze
+ook moeten kunnen terugzetten, en een half herstelde kleur is erger dan een
+helderheid die terugkomt. Wie een gekleurde lamp als wake-up light gebruikt, houdt
+na een voorbeeld zijn kleur maar krijgt de helderheid van vóór het voorbeeld
+terug.
 """
 
 from __future__ import annotations
@@ -53,7 +68,7 @@ import datetime as dt
 import logging
 from typing import Any
 
-from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
 
@@ -66,6 +81,8 @@ _LOGGER = logging.getLogger(__name__)
 # Sleutels in de context per lopend voorbeeld.
 CTX_VOLUME_VOOR = "volume_voor"
 CTX_SHUFFLE_VOOR = "shuffle_voor"
+CTX_LAMP = "lamp"
+CTX_LAMP_VOOR = "lamp_voor"
 CTX_UNSUB_MAX = "unsub_max"
 
 REDEN_TIMEOUT = "timeout"
@@ -97,13 +114,22 @@ def loopt_op(hass: HomeAssistant, speaker: str) -> bool:
 
 
 async def async_start(
-    hass: HomeAssistant, speaker: str, geluid: dict[str, Any], volume_pct: int
+    hass: HomeAssistant,
+    speaker: str,
+    geluid: dict[str, Any],
+    volume_pct: int,
+    lamp: dict[str, Any] | None = None,
 ) -> None:
     """Start een voorbeeld. Gooit `VoorbeeldGeweigerd` als dat niet kan.
 
     De volgorde volgt die van het afvuren (SPEC 9.1), met twee verschillen die er
     toe doen: het volume gaat naar het **ingestelde** niveau in plaats van naar 0,
     en er komt geen oploop achteraan.
+
+    :param lamp: `{"entity_id", "brightness_pct"}` of `None`. Sinds fase 8 doet het
+        voorbeeld **ook** de wake-up light (SPEC 5.4): wie 100 % instelt wil zien of
+        dat niet te fel is, net zoals hij het volume wil horen. `None` betekent dat
+        er geen lamp gekozen is, en dan wordt er geen enkele lamp aangeraakt.
     """
     # 1. Is dit wel een speaker die we mogen gebruiken (SPEC 7.2)? Dezelfde
     #    controle als `alarms/save`, want de editor stuurt hier een keuze heen die
@@ -190,9 +216,20 @@ async def async_start(
             f"Het geluid '{(geluid or {}).get('name') or uri}' kon niet gestart worden.",
         ) from fout
 
+    # 7. De wake-up light (SPEC 5.4 en 12), en die komt **ná** het geluid.
+    #
+    #    Bij een wekker gaat de lamp vóór het geluid, omdat het geluid daar 2,1-2,6 s
+    #    kan blokkeren en de lamp niet mag wachten op iets dat kan mislukken. Bij een
+    #    voorbeeld ligt het andersom: mislukt `play_media`, dan wordt het voorbeeld
+    #    geweigerd, en dan hoort er geen lamp te hebben geflitst die we meteen weer
+    #    uitzetten. Het scheelt ook een derde terugzetting in het faalpad hierboven.
+    lamp_entity, lamp_voor = await _async_lamp_aan(hass, lamp)
+
     context: dict[str, Any] = {
         CTX_VOLUME_VOOR: volume_voor,
         CTX_SHUFFLE_VOOR: shuffle_voor,
+        CTX_LAMP: lamp_entity,
+        CTX_LAMP_VOOR: lamp_voor,
         CTX_UNSUB_MAX: None,
     }
     _register(hass)[speaker] = context
@@ -206,6 +243,111 @@ async def async_start(
         volume_pct,
         VOORBEELD_MAX_MINUTEN,
     )
+
+
+def lampstand_van(hass: HomeAssistant, entity_id: str) -> dict[str, Any] | None:
+    """Hoe staat deze lamp nu? `None` als dat niet te lezen is.
+
+    Dezelfde drie redenen voor `None` als bij `volume_pct_van` en `shuffle_van`: de
+    entiteit bestaat niet, is `unavailable`, of heeft een toestand die we niet
+    kennen. En dezelfde consequentie: **niets terugzetten** is dan het juiste, want
+    een verzonnen stand zet het licht van de klant op iets wat hij niet had.
+
+    Wat er in de stand zit is bewust minimaal: aan of uit, en de helderheid als de
+    lamp die heeft. Kleur, kleurtemperatuur en effecten worden **niet** gelezen en
+    dus ook niet teruggezet — zie de moduledocstring. Ze bewaren zou betekenen dat
+    we ze ook moeten kunnen herstellen, en een half herstelde kleur is erger dan
+    een helderheid die terugkomt.
+    """
+    state = hass.states.get(entity_id)
+    if state is None or state.state not in (STATE_ON, STATE_OFF):
+        return None
+    if state.state == STATE_OFF:
+        return {"aan": False, "brightness": None}
+    helderheid = state.attributes.get("brightness")
+    return {
+        "aan": True,
+        "brightness": int(helderheid) if isinstance(helderheid, (int, float)) else None,
+    }
+
+
+async def _async_lamp_aan(
+    hass: HomeAssistant, lamp: dict[str, Any] | None
+) -> tuple[str | None, dict[str, Any] | None]:
+    """Zet de wake-up light aan voor het voorbeeld. Gooit nooit.
+
+    Geeft `(entity_id, stand_ervoor)` terug. `entity_id` is `None` als er geen lamp
+    gekozen is; dan is er ook niets aangeraakt en niets terug te zetten.
+
+    **Een falende lamp stopt het voorbeeld niet.** Het geluid is het voorbeeld, net
+    zoals het geluid de wekker is (SPEC 12). Er komt een `WARNING` in het log en
+    verder gaat alles door.
+
+    De stand wordt **vóór** het zetten gelezen, om dezelfde reden als bij het volume
+    (SPEC 9.5): erna lees je je eigen waarde terug, en dan zet het stoppen de lamp
+    van iedereen op het voorbeeldniveau.
+    """
+    if not isinstance(lamp, dict):
+        return None, None
+    # Geen aparte controle op een lege `entity_id`. Nagerekend in de mutatieproef
+    # van fase 8 (M11): er is geen invoer waarbij die regel iets verandert. De enige
+    # weg hierheen is `preview/start`, en die haalt de lamp door `valideer_light` —
+    # die eist een `entity_id` in het `light.`-domein en gooit anders
+    # `invalid_format`. Een controle die niets kan vangen suggereert dekking die er
+    # niet is (valkuil 34, derde rij).
+    entity_id = lamp["entity_id"]
+
+    stand_voor = lampstand_van(hass, entity_id)
+    if stand_voor is None:
+        _LOGGER.debug(
+            "Stand van lamp %s is niet te lezen; na het voorbeeld wordt niets teruggezet",
+            entity_id,
+        )
+
+    try:
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {ATTR_ENTITY_ID: entity_id, "brightness_pct": lamp.get("brightness_pct")},
+            blocking=True,
+        )
+    except Exception as fout:  # noqa: BLE001 - het licht is het voorbeeld niet
+        _LOGGER.warning(
+            "Lamp %s kon niet aangezet worden voor het voorbeeld (%s); het geluid "
+            "speelt gewoon door",
+            entity_id,
+            fout,
+        )
+    return entity_id, stand_voor
+
+
+async def _async_lamp_terug(
+    hass: HomeAssistant, entity_id: str | None, stand: dict[str, Any] | None
+) -> None:
+    """Zet de lamp terug zoals hij stond. Gooit nooit.
+
+    `None` op een van beide betekent niets doen: er was geen lamp gekozen, of zijn
+    stand was niet te lezen. Nooit een verzonnen waarde (SPEC 9.5).
+
+    Stond hij **uit**, dan gaat hij uit. Stond hij **aan**, dan gaat hij aan op zijn
+    oude helderheid — en had de lamp die niet, dan gaat hij aan zonder er een te
+    noemen. `brightness: None` meesturen zou een lamp zonder dimmer een waarde geven
+    die hij niet kent.
+    """
+    if not entity_id or stand is None:
+        return
+    try:
+        if not stand["aan"]:
+            await hass.services.async_call(
+                "light", "turn_off", {ATTR_ENTITY_ID: entity_id}, blocking=True
+            )
+            return
+        data: dict[str, Any] = {ATTR_ENTITY_ID: entity_id}
+        if stand["brightness"] is not None:
+            data["brightness"] = stand["brightness"]
+        await hass.services.async_call("light", "turn_on", data, blocking=True)
+    except Exception as fout:  # noqa: BLE001 - terugzetten mag niet stukgaan
+        _LOGGER.warning("Lamp %s terugzetten is mislukt: %s", entity_id, fout)
 
 
 def _naam(hass: HomeAssistant, entity_id: str) -> str:
@@ -273,6 +415,12 @@ async def async_stop(hass: HomeAssistant, speaker: str, *, reden: str) -> bool:
     shuffle_voor = context.get(CTX_SHUFFLE_VOOR)
     if shuffle_voor is not None:
         await afvuren.async_zet_shuffle(hass, speaker, shuffle_voor)
+
+    # De lamp gaat terug naar hoe hij stond, en dat wijkt bewust af van een echte
+    # wekker (SPEC 12: die laat hem aan). Bij een wekker word je wakker; bij een
+    # voorbeeld wil je je kamer niet op vol licht achterlaten omdat je even iets
+    # uitprobeerde. Zelfde redenering als het volume in SPEC 9.5.
+    await _async_lamp_terug(hass, context.get(CTX_LAMP), context.get(CTX_LAMP_VOOR))
 
     _LOGGER.debug("Voorbeeld op %s gestopt (%s)", speaker, reden)
     return True

@@ -211,8 +211,8 @@ class Speelhuis:
 
     Wat hier gemockt wordt zijn **HA-services van andere integraties**, en dat is de
     enige eerlijke manier: `music_assistant` is er niet in een test, en de vier
-    aanroepen die deze fase doet (`play_media`, `volume_set`, `media_stop`,
-    `shuffle_set`, `light.turn_on`) zijn precies de grens van dit product.
+    aanroepen die dit product doet (`play_media`, `volume_set`, `media_stop`,
+    `shuffle_set`, `light.turn_on`, `light.turn_off`) zijn precies zijn grens.
 
     **Er wordt niets van onze eigen code gemockt.** Dat is het verschil met een test
     die "de setup faalt niet" bewijst: de volgorde, de clamping, de terugval op
@@ -286,6 +286,9 @@ class Speelhuis:
         async def _licht(call) -> None:
             self._boek("light.turn_on", call.data)
 
+        async def _licht_uit(call) -> None:
+            self._boek("light.turn_off", call.data)
+
         async def _shuffle(call) -> None:
             self._boek("media_player.shuffle_set", call.data)
             self.shuffle_stand = bool(call.data["shuffle"])
@@ -302,6 +305,7 @@ class Speelhuis:
         self.hass.services.async_register("media_player", "media_stop", _stop)
         self.hass.services.async_register("media_player", "shuffle_set", _shuffle)
         self.hass.services.async_register("light", "turn_on", _licht)
+        self.hass.services.async_register("light", "turn_off", _licht_uit)
 
         # `noodrem.controleer_speaker` en `async_controleer_uri` vragen naar een geladen
         # MA-entry. Zonder deze zou elke test hier al afketsen op `ma_unavailable`, en
