@@ -84,11 +84,11 @@ async def test_changed_draagt_alleen_de_persoon(
     assert berichten[0] == {"event": "changed", "person": PERSON_ENTITY_ID}
 
 
-@pytest.mark.parametrize("commando", ["save", "set_enabled", "skip_next", "clear_message", "delete"])
+@pytest.mark.parametrize("commando", ["save", "set_enabled", "clear_message", "delete"])
 async def test_elk_muterend_commando_meldt_de_wijziging(
     hass: HomeAssistant, hass_ws_client, omgeving, commando: str
 ) -> None:
-    """Alle vijf de muterende commando's sturen `changed` (SPEC 15.9).
+    """Alle vier de muterende commando's sturen `changed` (SPEC 15.9).
 
     NIEUW GEDRAG. Dit is de test die een vergeten commando vangt — en die
     vergeetachtigheid is de reden dat het bericht in de opslaglaag zit en niet
@@ -116,12 +116,6 @@ async def test_elk_muterend_commando_meldt_de_wijziging(
             "person": PERSON_ENTITY_ID,
             "alarm_id": alarm_id,
             "enabled": False,
-        },
-        "skip_next": {
-            "type": f"{DOMAIN}/alarms/skip_next",
-            "person": PERSON_ENTITY_ID,
-            "alarm_id": alarm_id,
-            "skip": True,
         },
         "clear_message": {
             "type": f"{DOMAIN}/alarms/clear_message",
@@ -220,12 +214,12 @@ async def test_geen_bericht_voor_een_verwijderde_persoon(
     abonnement.register_van(hass).abonneer(gebeurtenissen.append)
 
     # Positieve controle: mét persoon komt er een bericht.
-    await store.async_werk_velden_bij(omgeving, alarm_id, {"skip_next": True})
+    await store.async_werk_velden_bij(omgeving, alarm_id, {"enabled": False})
     assert len(_changed(gebeurtenissen)) == 1
 
     # De persoon verdwijnt; zijn wekkers blijven staan (SPEC 18.1).
     er.async_get(hass).async_remove(PERSON_ENTITY_ID)
-    await store.async_werk_velden_bij(omgeving, alarm_id, {"skip_next": False})
+    await store.async_werk_velden_bij(omgeving, alarm_id, {"enabled": True})
     assert len(_changed(gebeurtenissen)) == 1, "geen tweede bericht zonder person-entiteit"
 
 

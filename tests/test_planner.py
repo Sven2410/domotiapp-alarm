@@ -40,6 +40,8 @@ from custom_components.domotiapp_alarm.const import (
     DATA_STORE,
     DOMAIN,
     STORAGE_KEY,
+    STORAGE_MINOR_VERSION,
+    STORAGE_VERSION,
 )
 
 from .conftest import PERSON_ENTITY_ID, geldige_wekker, maak_speaker, registreer_person
@@ -56,7 +58,6 @@ def volledige_wekker(**overschrijf: Any) -> dict[str, Any]:
     wekker: dict[str, Any] = {
         **geldige_wekker(),
         "id": ALARM_ID,
-        "skip_next": False,
         "one_shot_at": None,
         "last_fired": None,
         "last_message": None,
@@ -71,8 +72,8 @@ async def _setup(hass: HomeAssistant, hass_storage: dict, persons: Any) -> str:
     registry_id = registreer_person(hass)
     maak_speaker(hass, features=GOEDE_FEATURES)
     hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "minor_version": 1,
+        "version": STORAGE_VERSION,
+        "minor_version": STORAGE_MINOR_VERSION,
         "key": STORAGE_KEY,
         "data": {"persons": persons},
     }
@@ -98,8 +99,8 @@ async def zet_op(
     registry_id = registreer_person(hass)
     maak_speaker(hass, features=GOEDE_FEATURES)
     hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "minor_version": 1,
+        "version": STORAGE_VERSION,
+        "minor_version": STORAGE_MINOR_VERSION,
         "key": STORAGE_KEY,
         "data": {"persons": {registry_id: {"alarms": wekkers}}},
     }
@@ -409,20 +410,22 @@ async def test_inhaalslag_kijkt_alleen_naar_het_laatste_moment(
     assert wekker["last_fired"] == dt.datetime(2026, 8, 13, 6, 45, tzinfo=AMS).isoformat()
 
 
-# --- 6. skip_next -----------------------------------------------------
+# --- 6. het respijtvenster zonder skip_next ---------------------------
 
 
-async def test_skip_next_slaat_een_moment_over_en_wordt_gewist(
+async def test_een_wekker_gaat_elke_dag_af_zonder_uitzondering(
     hass: HomeAssistant, hass_storage, freezer
 ) -> None:
-    """`skip_next` slaat precies één moment over en wordt daarna gewist.
+    """NIEUW GEDRAG. Verplicht geval 4 van fase 7.
 
-    NIEUW GEDRAG. Verplicht geval 6. Een implementatie die `skip_next` laat staan,
-    slaat élke volgende dag over — de wekker is dan stil uitgezet.
+    Dit was `test_skip_next_slaat_een_moment_over_en_wordt_gewist`. De hele
+    overslaanfunctie is vervallen, en wat overblijft is de eigenschap die er
+    tegenover stond en die nooit apart getoetst was: een wekker met een
+    dagpatroon gaat op **elk** passend moment af. Er is geen tak meer die er één
+    kan inslikken.
 
-    `last_fired` staat op het vorige moment (vrijdag), zodat de inhaalslag bij setup
-    niets vindt. Zonder dat wordt de skip al op dát gemiste moment opgebruikt; zie het
-    rapport onder "wat niet lukte" — SPEC 13.4 stap 4 laat dat open.
+    `last_fired` staat op het vorige moment (vrijdag), zodat de inhaalslag bij
+    setup niets vindt en de meting bij maandag begint.
     """
     vrijdag = dt.datetime(2026, 8, 7, 6, 45, tzinfo=AMS)
     freezer.move_to(dt.datetime(2026, 8, 10, 6, 0, tzinfo=AMS))  # maandag
@@ -430,25 +433,23 @@ async def test_skip_next_slaat_een_moment_over_en_wordt_gewist(
         hass,
         [
             volledige_wekker(
-                time="06:45",
-                days=[1, 2, 3, 4, 5],
-                skip_next=True,
-                last_fired=vrijdag.isoformat(),
+                time="06:45", days=[1, 2, 3, 4, 5], last_fired=vrijdag.isoformat()
             )
         ],
         hass_storage,
     )
-    assert uit_opslag(hass, registry_id)["skip_next"] is True, "nog niet opgebruikt"
 
     await tik(hass, freezer, dt.datetime(2026, 8, 10, 6, 45, 1, tzinfo=AMS))
-    assert not afgegaan(hass, registry_id)
+    assert afgegaan(hass, registry_id), "maandag hoort hij af te gaan"
     wekker = uit_opslag(hass, registry_id)
-    assert wekker["skip_next"] is False, "skip_next hoort gewist te zijn"
-    assert wekker["last_message"]["kind"] == meldingen.KIND_SKIPPED_BY_USER
-    assert wekker["last_message"]["severity"] == "notice"
+    assert wekker["last_message"] is None, "afgaan is geen mededeling waard"
+    assert wekker["last_fired"] == dt.datetime(2026, 8, 10, 6, 45, tzinfo=AMS).isoformat()
 
+    await afvuren.async_stop_afgaan(
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
+    )
     await tik(hass, freezer, dt.datetime(2026, 8, 11, 6, 45, 1, tzinfo=AMS))
-    assert afgegaan(hass, registry_id), "de dag erna hoort hij weer af te gaan"
+    assert afgegaan(hass, registry_id), "en dinsdag opnieuw"
 
 
 async def test_een_overgeslagen_eenmalige_wekker_gaat_ook_uit(

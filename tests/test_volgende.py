@@ -39,7 +39,6 @@ def wekker(**overschrijf) -> dict:
         "time": "06:45",
         "days": [1, 2, 3, 4, 5],
         "enabled": True,
-        "skip_next": False,
         "one_shot_at": None,
     }
     basis.update(overschrijf)
@@ -106,26 +105,21 @@ def test_next_fire_uitgezette_wekker() -> None:
     assert volgend_moment_van_wekker(wekker(enabled=False), nu) is None
 
 
-def test_next_fire_met_skip_next() -> None:
-    """`skip_next` slaat het eerstvolgende moment over. NIEUW GEDRAG.
+def test_een_vervallen_veld_verandert_niets_meer(  # noqa: D103
+) -> None:
+    """REGRESSIEWACHT. Een oud `skip_next` in de invoer wordt genegeerd.
 
-    Dat is wat de kaart moet tonen: de gebruiker heeft "deze ene niet" gezegd, dus
-    het eerstvolgende moment is dat van de dag daarna.
+    Tot fase 7 sloeg `skip_next: True` hier het eerstvolgende moment over. Het
+    veld is vervallen, en na de migratie staat het nergens meer — maar een wekker
+    die om wat voor reden dan ook nog zo'n sleutel draagt, mag het moment niet
+    stil een dag verschuiven. Deze test is de bewaker dat er niets van de oude
+    tak is blijven hangen.
     """
     nu = dt.datetime(2026, 8, 10, 8, 0, tzinfo=AMS)  # maandag
     zonder = volgend_moment_van_wekker(wekker(), nu)
     met = volgend_moment_van_wekker(wekker(skip_next=True), nu)
     assert zonder == dt.datetime(2026, 8, 11, 6, 45, tzinfo=AMS)
-    assert met == dt.datetime(2026, 8, 12, 6, 45, tzinfo=AMS)
-
-
-def test_next_fire_eenmalig_met_skip_next_gaat_helemaal_niet_af() -> None:
-    """NIEUW GEDRAG. Er is geen tweede moment om naar door te schuiven."""
-    nu = dt.datetime(2026, 8, 10, 8, 0, tzinfo=AMS)
-    eenmalig = wekker(
-        days=[], one_shot_at=dt.datetime(2026, 8, 12, 5, 20, tzinfo=AMS).isoformat(), skip_next=True
-    )
-    assert volgend_moment_van_wekker(eenmalig, nu) is None
+    assert met == zonder
 
 
 def test_volgende_wekker_kiest_het_vroegste_moment_niet_de_vroegste_tijd() -> None:

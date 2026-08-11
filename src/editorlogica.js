@@ -68,8 +68,8 @@ export function nieuwConcept() {
 /**
  * Een concept uit een bestaande wekker (SPEC 5.5).
  *
- * Alleen de velden die de gebruiker beheert. `skip_next`, `one_shot_at`,
- * `last_fired` en `last_message` blijven bij de server; ze meenemen zou
+ * Alleen de velden die de gebruiker beheert. `one_shot_at`, `last_fired` en
+ * `last_message` blijven bij de server; ze meenemen zou
  * `alarms/save` een `invalid_format` opleveren (SPEC 15.2).
  */
 export function conceptVan(wekker) {

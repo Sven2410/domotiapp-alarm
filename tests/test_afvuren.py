@@ -45,6 +45,8 @@ from custom_components.domotiapp_alarm.const import (
     OPLOOP_STAP_SECONDEN,
     STOP_NA_MINUTEN,
     STORAGE_KEY,
+    STORAGE_MINOR_VERSION,
+    STORAGE_VERSION,
 )
 
 from .conftest import (
@@ -87,7 +89,6 @@ def volledige_wekker(**overschrijf: Any) -> dict[str, Any]:
     wekker: dict[str, Any] = {
         **geldige_wekker(),
         "id": ALARM_ID,
-        "skip_next": False,
         "one_shot_at": None,
         "last_fired": None,
         "last_message": None,
@@ -119,8 +120,8 @@ async def zet_op(
         huis.volume_niveau = None
 
     hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "minor_version": 1,
+        "version": STORAGE_VERSION,
+        "minor_version": STORAGE_MINOR_VERSION,
         "key": STORAGE_KEY,
         "data": {"persons": {registry_id: {"alarms": [wekker or volledige_wekker()]}}},
     }
@@ -1524,8 +1525,8 @@ async def test_de_planner_laat_een_wekker_echt_afspelen(
     huis.vind(URI)
     huis.zet_volume_op(50)
     hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "minor_version": 1,
+        "version": STORAGE_VERSION,
+        "minor_version": STORAGE_MINOR_VERSION,
         "key": STORAGE_KEY,
         "data": {"persons": {registry_id: {"alarms": [wekker]}}},
     }

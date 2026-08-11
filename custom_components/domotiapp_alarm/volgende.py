@@ -231,15 +231,14 @@ def volgend_moment_van_wekker(wekker: dict, nu: dt.datetime) -> dt.datetime | No
     `None` betekent: deze wekker gaat niet meer af. Dat geldt voor een
     uitgezette wekker en voor een eenmalige wekker waarvan het moment voorbij is.
 
-    `skip_next` slaat het **eerstvolgende** moment over: de teruggegeven waarde is
-    dan het moment daarna. Dat is wat de kaart moet tonen, want de gebruiker heeft
-    gezegd "deze ene niet".
+    Tot fase 7 kon `skip_next` hier één moment overslaan, en dan gaf deze functie
+    het moment **daarna** terug. Die functie is vervallen; wat overblijft is de
+    eerstvolgende keer dat deze wekker afgaat, zonder uitzonderingen.
     """
     if not wekker.get("enabled"):
         return None
 
     dagen = wekker.get("days") or []
-    overslaan = bool(wekker.get("skip_next"))
 
     if not dagen:
         # Eenmalige wekker: het moment staat in de opslag.
@@ -249,16 +248,10 @@ def volgend_moment_van_wekker(wekker: dict, nu: dt.datetime) -> dt.datetime | No
         moment = dt.datetime.fromisoformat(rauw)
         if moment.tzinfo is None:
             raise ValueError("one_shot_at moet een tijdzone hebben")
-        if moment <= nu:
-            return None
-        # Een overgeslagen eenmalige wekker gaat helemaal niet meer af.
-        return None if overslaan else moment
+        return None if moment <= nu else moment
 
-    aantal = 2 if overslaan else 1
-    momenten = volgende_momenten(nu, wekker["time"], dagen, aantal=aantal)
-    if len(momenten) < aantal:
-        return None
-    return momenten[aantal - 1]
+    momenten = volgende_momenten(nu, wekker["time"], dagen, aantal=1)
+    return momenten[0] if momenten else None
 
 
 def volgende_wekker(wekkers: list[dict], nu: dt.datetime) -> VolgendMoment | None:

@@ -50,8 +50,11 @@ KIND_SOUND_GONE = "sound_gone"
 KIND_SPEAKER_LOST_DURING_PLAY = "speaker_lost_during_play"
 KIND_LIGHT_FAILED = "light_failed"
 KIND_VOLUME_RAMP_UNAVAILABLE = "volume_ramp_unavailable"
+# `skipped_by_user` is in fase 7 vervallen met `skip_next`. De naam kan nog in de
+# opslag van een bestaande klant staan als `last_message.kind`, en dat blijft
+# leesbaar: de kaart toont `text` en `severity` uit het opgeslagen object en
+# raadpleegt deze tabel niet (SPEC 11.7).
 KIND_SKIPPED_GRACE_WINDOW = "skipped_grace_window"
-KIND_SKIPPED_BY_USER = "skipped_by_user"
 
 # Welke soort een fout is en welke een mededeling. Eén tabel, zodat een nieuwe soort
 # niet per ongeluk als het verkeerde soort door het leven gaat.
@@ -63,7 +66,6 @@ _SEVERITY: dict[str, str] = {
     KIND_LIGHT_FAILED: SEVERITY_ERROR,
     KIND_VOLUME_RAMP_UNAVAILABLE: SEVERITY_ERROR,
     KIND_SKIPPED_GRACE_WINDOW: SEVERITY_NOTICE,
-    KIND_SKIPPED_BY_USER: SEVERITY_NOTICE,
 }
 
 
@@ -129,8 +131,6 @@ def tekst_voor(kind: str, wekker: dict[str, Any], **extra: str) -> str:
         # wekker die ná dat moment is aangemaakt meldt dit bij de eerstvolgende
         # herstart, en dan zou de oude tekst onwaar zijn.
         return f"Je wekker van {tijd} is niet afgegaan; Home Assistant heeft dat moment gemist."
-    if kind == KIND_SKIPPED_BY_USER:
-        return f"De wekker van {tijd} is overgeslagen, zoals je had ingesteld."
     raise ValueError(f"onbekende meldingssoort {kind!r}")
 
 
@@ -176,8 +176,8 @@ async def async_meld(
         _LOGGER.error("%s", message["text"])
     else:
         # Een overgeslagen wekker wegens het respijtvenster is INFO: de klant kon er
-        # niets aan doen. Een door de klant zelf ingesteld overslaan is DEBUG, want
-        # dat is precies wat hij vroeg (SPEC 19.5).
+        # niets aan doen (SPEC 19.5). Sinds fase 7 is dat de enige mededeling die er
+        # is; de `else` blijft staan voor de volgende soort die erbij komt.
         if kind == KIND_SKIPPED_GRACE_WINDOW:
             _LOGGER.info("%s", message["text"])
         else:

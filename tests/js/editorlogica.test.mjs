@@ -263,6 +263,10 @@ describe("naarAlarm (SPEC 15.2)", () => {
   });
 
   it("stuurt nooit een serverveld mee (NIEUW GEDRAG)", () => {
+    // `skip_next` staat er sinds fase 7 als **vervallen** veld tussen, en dat is
+    // met opzet: de kaart kan een wekker in handen hebben die nog van vóór de
+    // migratie komt, en dan mag dat veld er zeker niet weer heen. `naarAlarm`
+    // werkt op een witte lijst, dus onbekend en vervallen zijn hetzelfde geval.
     const alarm = naarAlarm({
       ...volledigConcept(),
       skip_next: true,

@@ -52,6 +52,7 @@ import {
   EDITOR_TYPE,
   WEKKER_EDITOR_TYPE,
 } from "./const.js";
+import { bevestigingsTekst } from "./bevestiging.js";
 import { DomotiappAlarmEditor } from "./editor.js";
 import {
   foutTekst,
@@ -59,7 +60,6 @@ import {
   stubConfig,
   valideerConfig,
 } from "./kaartconfig.js";
-import { plaatsMenu } from "./menu.js";
 import { registreerWanneerGereed } from "./registreer.js";
 import {
   TEKST_STOPPEN,
@@ -80,8 +80,10 @@ const VERSION = __CARD_VERSION__;
  */
 const ICOON_PLUS =
   "M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z";
-const ICOON_MENU =
-  "M12,16A2,2 0 0,1 14,18A2,2 0 0,1 12,20A2,2 0 0,1 10,18A2,2 0 0,1 12,16M12,10A2,2 0 0,1 14,12A2,2 0 0,1 12,14A2,2 0 0,1 10,12A2,2 0 0,1 12,10M12,4A2,2 0 0,1 14,6A2,2 0 0,1 12,8A2,2 0 0,1 10,6A2,2 0 0,1 12,4Z";
+// mdi:trash-can-outline. Eén handeling per rij sinds fase 7; het overloopmenu is
+// vervallen omdat de overlay eronder elke klik opat (zie de moduledocstring).
+const ICOON_PRULLENBAK =
+  "M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z";
 const ICOON_INFO =
   "M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z";
 const ICOON_FOUT =
@@ -98,8 +100,6 @@ class DomotiappAlarmCard extends LitElement {
     _config: { state: true },
     _toestand: { state: true },
     _fout: { state: true },
-    _menuVoor: { state: true },
-    _menuPositie: { state: true },
     _bevestigVoor: { state: true },
     _bezig: { state: true },
     _tijdelijkeMelding: { state: true },
@@ -111,11 +111,6 @@ class DomotiappAlarmCard extends LitElement {
     super();
     this._toestand = null;
     this._fout = null;
-    this._menuVoor = null;
-    // `null` zolang het menu nog niet gemeten is. Het menu rendert dan wel al —
-    // anders valt er niets te meten — maar onzichtbaar, zodat het niet één beeld
-    // lang op de verkeerde plek staat.
-    this._menuPositie = null;
     this._bevestigVoor = null;
     this._bezig = false;
     this._tijdelijkeMelding = null;
@@ -126,15 +121,6 @@ class DomotiappAlarmCard extends LitElement {
     /** De persoon waarvoor het huidige abonnement loopt. */
     this._abonnementVoor = null;
     this._afmelden = null;
-    /** De rechthoek van de ⋮-knop op het moment van openen. Niet reactief. */
-    this._menuAnker = null;
-    /**
-     * Een `position: fixed` menu staat stil terwijl de pagina beweegt. Het opnieuw
-     * uitrekenen bij elke scrollstap zou het menu laten meelopen met de knop, maar
-     * dat is meer machinerie dan een overloopmenu waard is: scrollen met een open
-     * menu betekent dat je iets anders wilt. HA's eigen menu's doen hetzelfde.
-     */
-    this._opVerplaatsing = () => this._sluitMenu();
   }
 
   /**
@@ -150,7 +136,6 @@ class DomotiappAlarmCard extends LitElement {
       // Andere persoon: alles wat we van de vorige wisten is niet meer waar.
       this._toestand = null;
       this._fout = null;
-      this._sluitMenu();
       this._bevestigVoor = null;
       this._herstartAbonnement();
     }
@@ -198,7 +183,6 @@ class DomotiappAlarmCard extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._stopAbonnement();
-    this._sluitMenu();
   }
 
   updated(gewijzigd) {
@@ -206,66 +190,6 @@ class DomotiappAlarmCard extends LitElement {
     if (gewijzigd.has("hass") && this.hass) {
       this._startAbonnement();
     }
-    this._plaatsMenu();
-  }
-
-  // --- het overloopmenu -------------------------------------------------
-
-  /**
-   * Open of sluit het menu van deze rij.
-   *
-   * De rechthoek van de knop wordt **nu** vastgelegd en niet bij het meten: tussen
-   * die twee momenten zit een beeldopbouw, en de knop kan intussen verschoven zijn
-   * doordat er een melding bij kwam. Dat is dezelfde reden als valkuil 16, alleen
-   * dan van binnenuit.
-   */
-  _wisselMenu(wekker, event) {
-    if (this._menuVoor === wekker.id) {
-      this._sluitMenu();
-      return;
-    }
-    const r = event.currentTarget.getBoundingClientRect();
-    this._menuAnker = { top: r.top, bottom: r.bottom, right: r.right };
-    this._menuPositie = null;
-    this._menuVoor = wekker.id;
-    window.addEventListener("scroll", this._opVerplaatsing, true);
-    window.addEventListener("resize", this._opVerplaatsing);
-  }
-
-  _sluitMenu() {
-    this._menuVoor = null;
-    this._menuPositie = null;
-    this._menuAnker = null;
-    window.removeEventListener("scroll", this._opVerplaatsing, true);
-    window.removeEventListener("resize", this._opVerplaatsing);
-  }
-
-  /**
-   * Meet het menu en zet het op zijn plek (SPEC 3.2).
-   *
-   * De hoogte wordt **gemeten** en niet uit de CSS afgeleid. Twee items zijn het
-   * altijd, maar de tekst erin verschilt ("Overslaan" tegenover "Toch niet
-   * overslaan") en de lettergrootte komt uit het thema van de gebruiker. Een
-   * geraden hoogte zou het menu bij een grote letter alsnog over de kaartrand
-   * duwen — precies de bevinding die deze code oplost.
-   */
-  _plaatsMenu() {
-    if (!this._menuVoor || this._menuPositie || !this._menuAnker) {
-      return;
-    }
-    const menu = this.renderRoot?.querySelector(".menu");
-    const kaart = this.renderRoot?.querySelector("ha-card");
-    if (!menu || !kaart) {
-      return;
-    }
-    const m = menu.getBoundingClientRect();
-    const k = kaart.getBoundingClientRect();
-    this._menuPositie = plaatsMenu(
-      this._menuAnker,
-      { top: k.top, bottom: k.bottom },
-      { breedte: m.width, hoogte: m.height },
-      { breedte: window.innerWidth, hoogte: window.innerHeight },
-    );
   }
 
   // --- de verbinding met de integratie ---------------------------------
@@ -396,7 +320,6 @@ class DomotiappAlarmCard extends LitElement {
    * krijgt hem als gewone eigenschap binnen.
    */
   async _openEditor(wekker) {
-    this._sluitMenu();
     this._bevestigVoor = null;
     this._editorVoor = wekker;
     if (!this.hass) {
@@ -437,16 +360,6 @@ class DomotiappAlarmCard extends LitElement {
       person: this._person(),
       alarm_id: wekker.id,
       enabled: aan,
-    });
-  }
-
-  _overslaan(wekker) {
-    this._sluitMenu();
-    this._roep({
-      type: CMD.skipNext,
-      person: this._person(),
-      alarm_id: wekker.id,
-      skip: !wekker.skip_next,
     });
   }
 
@@ -502,15 +415,10 @@ class DomotiappAlarmCard extends LitElement {
     :host {
       --domotiapp-accent: ${unsafeCSS(ACCENT)};
     }
-    /* Geen overflow:hidden op de kaart. Sinds fase 6b staat het overloopmenu
-       position:fixed en zou een gewone overflow het niet meer knippen, maar de
-       reden blijft staan voor alles wat er nog bij kan komen — en de stopknop houdt
-       daarom zijn eigen hoekafronding. */
-    .sluiter {
-      position: fixed;
-      inset: 0;
-      z-index: 2;
-    }
+    /* Geen overflow:hidden op de kaart: de stopknop houdt daarom zelf de
+       hoekafronding van de kaart. Er staat sinds fase 7 niets meer boven de kaart
+       te zweven — de volle-viewportlaag die het overloopmenu afsloot, is precies
+       wat die knoppen onklikbaar maakte. */
     .mededeling {
       padding: 16px;
       color: var(--secondary-text-color);
@@ -638,48 +546,6 @@ class DomotiappAlarmCard extends LitElement {
       flex: 0 0 auto;
     }
 
-    /* --- overloopmenu ---
-       position:fixed en niet absolute: als absolute laag in de rij stond het menu
-       altijd 40 px onder de knop, en bij de onderste rij stak het daarmee onder de
-       kaart uit — over wat er op het dashboard onder stond. Dat is de bevinding van
-       fase 6b. Met fixed bepaalt plaatsMenu() de plek, en die klapt het menu boven
-       de knop zodra het er onder niet binnen de kaart past.
-
-       De klasse "meten" is het beeld vóór die berekening: het menu moet gerenderd
-       zijn om zijn hoogte te kunnen meten, maar het hoort niet één beeldopbouw lang
-       links bovenin te staan. Daarom visibility en niet display:none — een element
-       zonder layout heeft geen afmetingen om te meten. */
-    .menu {
-      position: fixed;
-      left: 0;
-      top: 0;
-      z-index: 3;
-      min-width: 168px;
-      background: var(--card-background-color, #fff);
-      border: 1px solid var(--divider-color);
-      border-radius: 8px;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
-      overflow: hidden;
-    }
-    .menu.meten {
-      visibility: hidden;
-    }
-    .menu button {
-      display: block;
-      width: 100%;
-      text-align: left;
-      padding: 12px 16px;
-      border: none;
-      background: none;
-      cursor: pointer;
-      color: var(--primary-text-color);
-      font-size: var(--ha-font-size-m, 14px);
-      font-family: inherit;
-    }
-    .menu button:hover {
-      background: var(--divider-color);
-    }
-
     /* --- melding en bevestiging op een rij --- */
     .onderrij {
       display: flex;
@@ -714,6 +580,13 @@ class DomotiappAlarmCard extends LitElement {
     button.tekstknop.gevaar {
       color: var(--error-color);
       border-color: var(--error-color);
+    }
+
+    /* De bevestigingsregel mag niet in het niets opgaan tussen de wekkers: hij
+       vraagt iets onomkeerbaars. Zelfde vorm als een melding, met de tekst in de
+       primaire kleur in plaats van de secundaire. */
+    .onderrij.bevestiging .boodschap {
+      color: var(--primary-text-color);
     }
 
     /* --- kopbalk (SPEC 3.1 en 3.2) ---
@@ -809,9 +682,6 @@ class DomotiappAlarmCard extends LitElement {
       </ha-card>`;
     }
     return html`<ha-card>
-      ${this._menuVoor
-        ? html`<div class="sluiter" @click=${() => this._sluitMenu()}></div>`
-        : nothing}
       ${stop ? this._stopknop(stop) : this._lijst()}
       ${this._tijdelijkeMelding
         ? html`<div class="onderrij">
@@ -877,6 +747,38 @@ class DomotiappAlarmCard extends LitElement {
     `;
   }
 
+  /**
+   * De bevestiging bij het verwijderen (SPEC 3.2): een regel in de kaart.
+   *
+   * **Geen dialoog, en dat is gemeten** — zie de kop van `bevestiging.js`.
+   * `ha-dialog` bestaat op een dashboard, maar zijn sloten zijn in 2026.8 van mwc
+   * naar Web Awesome gegaan en de knoppen kwamen als 0 x 0 uit de verf.
+   *
+   * **Deze regel overlapt niets.** Hij duwt de rijen eronder omlaag in plaats van
+   * eroverheen te gaan, en er ligt geen laag over de kaart die klikken opvangt.
+   * Dat laatste is de hele bevinding van fase 7.
+   *
+   * **Annuleren doet niets** — geen aanroep, alleen `_bevestigVoor` terug op
+   * `null`. Dat is de hele eis, en het is de reden dat er hier geen `_roep` staat
+   * die je per ongeluk kunt aanzetten.
+   */
+  _bevestiging(wekker) {
+    return html`<div class="onderrij bevestiging">
+      <span class="boodschap">${bevestigingsTekst(wekker)}</span>
+      <button
+        class="tekstknop"
+        @click=${() => {
+          this._bevestigVoor = null;
+        }}
+      >
+        Annuleren
+      </button>
+      <button class="tekstknop gevaar" @click=${() => this._verwijder(wekker)}>
+        Verwijderen
+      </button>
+    </div>`;
+  }
+
   _rij(wekker, nu) {
     const melding = meldingVan(wekker);
     const aan = Boolean(wekker.enabled);
@@ -903,58 +805,16 @@ class DomotiappAlarmCard extends LitElement {
         ></button>
         <button
           class="icoonknop"
-          title="Meer"
-          aria-label="Meer voor ${wekker.name}"
-          aria-haspopup="menu"
-          aria-expanded=${this._menuVoor === wekker.id ? "true" : "false"}
-          @click=${(e) => this._wisselMenu(wekker, e)}
+          title="Verwijderen"
+          aria-label="Wekker ${wekker.name} verwijderen"
+          @click=${() => {
+            this._bevestigVoor = wekker.id;
+          }}
         >
-          ${svg(ICOON_MENU)}
+          ${svg(ICOON_PRULLENBAK)}
         </button>
-        ${this._menuVoor === wekker.id
-          ? html`<div
-              class="menu ${this._menuPositie ? "" : "meten"}"
-              role="menu"
-              style=${this._menuPositie
-                ? `left:${this._menuPositie.left}px;top:${this._menuPositie.top}px`
-                : ""}
-            >
-              <button role="menuitem" @click=${() => this._overslaan(wekker)}>
-                ${wekker.skip_next ? "Toch niet overslaan" : "Overslaan"}
-              </button>
-              <button
-                role="menuitem"
-                @click=${() => {
-                  this._sluitMenu();
-                  this._bevestigVoor = wekker.id;
-                }}
-              >
-                Verwijderen
-              </button>
-            </div>`
-          : nothing}
       </div>
-      ${this._bevestigVoor === wekker.id
-        ? html`<div class="onderrij">
-            <span class="boodschap">
-              Wekker "${wekker.name}" van ${wekker.time} verwijderen?
-            </span>
-            <button
-              class="tekstknop"
-              @click=${() => {
-                this._bevestigVoor = null;
-              }}
-            >
-              Annuleren
-            </button>
-            <button
-              class="tekstknop gevaar"
-              @click=${() => this._verwijder(wekker)}
-            >
-              Verwijderen
-            </button>
-          </div>`
-        : nothing}
+      ${this._bevestigVoor === wekker.id ? this._bevestiging(wekker) : nothing}
       ${melding
         ? html`<div class="onderrij ${melding.isFout ? "fout" : ""}">
             ${svg(melding.isFout ? ICOON_FOUT : ICOON_INFO, "icoon klein")}

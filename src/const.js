@@ -19,12 +19,11 @@ export const DOCS_URL = "https://github.com/Sven2410/domotiapp-alarm";
 /** Het domein van de integratie; elk commando begint ermee (SPEC 15). */
 export const DOMAIN = "domotiapp_alarm";
 
-/** De elf commando's uit SPEC 15. */
+/** De tien commando's uit SPEC 15. `skipNext` is in fase 7 vervallen. */
 export const CMD = Object.freeze({
   get: `${DOMAIN}/alarms/get`,
   save: `${DOMAIN}/alarms/save`,
   setEnabled: `${DOMAIN}/alarms/set_enabled`,
-  skipNext: `${DOMAIN}/alarms/skip_next`,
   delete: `${DOMAIN}/alarms/delete`,
   stop: `${DOMAIN}/alarms/stop`,
   clearMessage: `${DOMAIN}/alarms/clear_message`,

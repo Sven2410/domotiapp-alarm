@@ -132,9 +132,9 @@ class Planner:
                     continue
                 if met_inhaalslag:
                     await self._async_inhaalslag(registry_id, person_entity_id, wekker)
-                    # De wekker kan door de inhaalslag zijn gewijzigd (skip_next
-                    # gewist, last_fired gezet); opnieuw lezen zodat we vooruit
-                    # plannen op de actuele stand.
+                    # De wekker kan door de inhaalslag zijn gewijzigd (last_fired
+                    # gezet, een eenmalige uitgezet); opnieuw lezen zodat we
+                    # vooruit plannen op de actuele stand.
                     vers = store.wekker(registry_id, wekker["id"])
                     if vers is None or not vers.get("enabled"):
                         continue
@@ -261,15 +261,6 @@ class Planner:
             uur, minuut = parse_tijd(wekker["time"])
             moment = nu.replace(hour=uur, minute=minuut, second=0, microsecond=0)
 
-            if wekker.get("skip_next"):
-                # Dit ene moment overslaan, en skip_next daarna wissen (SPEC 13.4
-                # stap 4 en SPEC 15.5).
-                await self._async_sla_over(
-                    registry_id, person_entity_id, wekker, moment,
-                    meldingen.KIND_SKIPPED_BY_USER,
-                )
-                return
-
             await self._async_vuur(registry_id, person_entity_id, wekker, moment)
 
         return _op_tijd
@@ -335,7 +326,11 @@ class Planner:
         moment: dt.datetime,
         kind: str,
     ) -> None:
-        """Sla dit moment over, meld het, en wis `skip_next`.
+        """Sla dit moment over en meld het.
+
+        Sinds fase 7 is er nog één reden om hier te komen: het moment ligt buiten
+        het respijtvenster (SPEC 13.4 stap 5). Het door de gebruiker aangevraagde
+        overslaan is met `skip_next` vervallen.
 
         `last_fired` wordt **wel** op dit moment gezet. Anders zou de inhaalslag na
         een herstart hetzelfde overgeslagen moment opnieuw als "gemist" zien en er een
@@ -343,16 +338,16 @@ class Planner:
 
         En een **eenmalige** wekker gaat hier ook uit (SPEC 14.5). Overslaan verbruikt
         het moment net zo goed als afgaan — dat is de letterlijke lezing van SPEC 13.4
-        stap 4 die de eigenaar in fase 3c koos. Zou de schakelaar aan blijven, dan
-        staat er een wekker aan die nooit meer iets doet. Welke velden dat precies
-        zijn staat op één plek, in `afvuren._velden_bij_verbruikt_moment`.
+        die de eigenaar in fase 3c koos. Zou de schakelaar aan blijven, dan staat er
+        een wekker aan die nooit meer iets doet. Welke velden dat precies zijn staat
+        op één plek, in `afvuren.velden_bij_verbruikt_moment`.
         """
         store = self.hass.data[DOMAIN][DATA_STORE]
         await meldingen.async_meld(self.hass, store, registry_id, wekker, kind)
         await store.async_werk_velden_bij(
             registry_id,
             wekker["id"],
-            {"skip_next": False, **afvuren.velden_bij_verbruikt_moment(wekker, moment)},
+            afvuren.velden_bij_verbruikt_moment(wekker, moment),
         )
 
     # --- de inhaalslag (SPEC 13.4) --------------------------------------
@@ -382,13 +377,9 @@ class Planner:
         if laatste is not None and dt.datetime.fromisoformat(laatste) >= moment:
             return
 
-        # Stap 4: door de gebruiker overgeslagen.
-        if wekker.get("skip_next"):
-            await self._async_sla_over(
-                registry_id, person_entity_id, wekker, moment,
-                meldingen.KIND_SKIPPED_BY_USER,
-            )
-            return
+        # Stap 4 was "door de gebruiker overgeslagen" en is in fase 7 vervallen met
+        # `skip_next`. De nummering van SPEC 13.4 blijft staan; doorschuiven zou elke
+        # verwijzing naar "stap 3" en "stap 5" stil naar een andere stap laten wijzen.
 
         # Stap 5 en 6: binnen het respijtvenster alsnog afgaan, daarbuiten overslaan.
         if nu - moment <= dt.timedelta(minutes=RESPIJT_MINUTEN):

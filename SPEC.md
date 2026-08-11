@@ -162,36 +162,45 @@ Daaronder de lijst, één rij per wekker, in de volgorde uit
 | Herhaaldagen | `ma di wo do vr` — of **"Eenmalig"** als er geen dag is aangevinkt |
 | Schakelaar | aan/uit, accentkleur `#026FA1` als hij aan staat |
 
-Een wekker is per rij:
+Een wekker is per rij **te verwijderen** —
+[sectie 15.4](#154-domotiapp_alarmalarmsdelete). Dat is de enige rij-actie naast
+de schakelaar en het openen van de editor.
 
-- **te verwijderen** — [sectie 15.4](#154-domotiapp_alarmalarmsdelete);
-- **eenmalig over te slaan** — [sectie 15.5](#155-domotiapp_alarmalarmsskip_next).
-  Een overgeslagen wekker blijft in de lijst staan, met de tekst
-  **"Morgen overgeslagen"** in plaats van de herhaaldagen, en met de schakelaar
-  nog aan.
+**Eén prullenbakknop per rij**, en geen overloopmenu. De knop vraagt een
+bevestiging, want verwijderen is onomkeerbaar; **Annuleren doet niets**.
 
-**VOORSTEL** voor hoe verwijderen en overslaan bereikbaar zijn: een
-overloopmenu (drie puntjes) per rij met twee items, **"Overslaan"** en
-**"Verwijderen"**. Verwijderen vraagt een bevestiging; overslaan niet, want dat
-is omkeerbaar met dezelfde knop.
+De bevestiging **noemt de naam én de tijd** van de wekker. Beide, want een lijst
+met vier wekkers heeft er zo twee van "Werk", en de vraag moet te beantwoorden
+zijn op precies het moment dat hij onomkeerbaar wordt.
 
-**Het menu blijft binnen de kaart.** Past het onder de knop niet meer binnen de
-onderrand, dan klapt het erboven. Dat is een eis en geen opmaakdetail: tot fase 6b
-hing het altijd onder de knop en stak het bij de onderste rij onder de kaart uit,
-over wat er op het dashboard onder stond — op een telefoon rommelig genoeg om
-gemeld te worden.
+*Tot fase 7 stond hier een overloopmenu met "Overslaan" en "Verwijderen". Het
+overslaan is als functie vervallen (zie [15.5](#155-vervallen)), en het menu zelf
+werkte niet — zie hieronder.*
 
-Past het in geen van beide richtingen binnen de kaart — een kaart met één rij is
-lager dan het menu hoog is — dan wint het **venster**: liever een menu dat een
-randje over de kaart steekt dan een menu dat half buiten beeld valt en niet aan te
-klikken is.
+**De bevestiging mag de kaart niet blokkeren.** Dat is een eis en geen
+opmaakdetail, en hij komt uit de bevinding die fase 7 opende: het overloopmenu
+werd afgesloten met een laag over het hele venster, en die laag ving **elke** klik
+op de kaart weg. Wie tweemaal op de drie puntjes drukte, kreeg de eerste keer een
+menu en de tweede keer niets, want de knop lag onder de laag. De eigenaar meldde
+het als *"het menu opent maar heel af en toe"*.
 
-**GEMETEN in fase 6b** op HA 2026.8.1, en het is de reden dat dit met de hand
-gebouwd is: `ha-md-menu`, `ha-md-menu-item`, `ha-button-menu`, `ha-md-button-menu`
-en `ha-menu` zijn op een gewoon dashboard geen van alle gedefinieerd. Dat is
-[19.4](#194-nooit-gooien-op-modulescope)'s buurman: een niet-gedefinieerd custom
-element rendert als een leeg inline-element, dus een HA-menu zou hier een
-onzichtbaar menu zijn zonder fout in de console.
+De regel die daaruit volgt: **elke laag die klikken opvangt, hoort ook te
+verbergen wat eronder ligt.** Een dialoog mag dat — dan is de rest van het scherm
+zichtbaar dood. Een menu dat naast een klikbare knop staat, mag het niet.
+
+**GEMETEN in fase 7** op HA 2026.8.1, verse pagina, zonder een enkele klik en nog
+eens vijf seconden later: `ha-dialog`, `ha-alert`, `ha-button` en
+`ha-icon-button` **zijn** gedefinieerd op een gewoon dashboard; `ha-md-dialog`
+niet. De bevestiging gebruikt daarom `ha-dialog` — die heeft het scrim, de
+focusval en Escape al opgelost.
+
+**Met een terugval**, want "gedefinieerd op dit dashboard" is niet hetzelfde als
+"gedefinieerd bij elke klant": fase 6b mat dat `ha-switch` in fase 4a nog niet
+geladen was en in 6b wel. Ontbreekt een van de componenten, dan komt de
+bevestiging als **regel binnen de kaart**, met dezelfde tekst en dezelfde twee
+knoppen; die regel overlapt niets. Het faalgeval zonder terugval zou stil zijn:
+een ongedefinieerd custom element rendert als een leeg inline-element, dus de
+klant zou op de prullenbak drukken en niets zien gebeuren.
 
 ### 3.3 De regel "eerstvolgende wekker"
 
@@ -1318,7 +1327,6 @@ Teksten bij `severity: "notice"`:
 | `kind` | Tekst op de kaart |
 |---|---|
 | `skipped_grace_window` | **"Je wekker van 06:45 is niet afgegaan; Home Assistant heeft dat moment gemist."** |
-| `skipped_by_user` | **"De wekker van 06:45 is overgeslagen, zoals je had ingesteld."** |
 
 De eerste is de tekst die de eigenaar heeft vastgelegd, en de reden dat deze hele
 categorie bestaat: dat is precies wat iemand wil weten die zich heeft
@@ -1483,24 +1491,13 @@ voor elke wekker die `enabled` is:
    moment, dan is de wekker al afgegaan en valt er niets in te halen. **Dit veld
    is de enige reden dat de inhaalslag niet dubbel kan vuren**, en het is ook de
    reden dat het bestaat.
-4. Is `skip_next` gezet voor dat moment, dan wordt hij overgeslagen en wordt
-   `skip_next` gewist.
+4. **VERVALLEN in fase 7.** Hier stond de controle op `skip_next`. Het veld en de
+   hele overslaanfunctie zijn weg; er is geen stap meer die een passend moment kan
+   inslikken.
 
-   **Dit geldt óók als dat moment buiten het respijtvenster viel** en de wekker dus
-   nooit is afgegaan. De overslag is dan verbruikt. Vastgelegd in fase 3c, omdat
-   fase 3b vaststelde dat deze stap twee lezingen toeliet en de tweede opnieuw zou
-   opduiken.
-
-   De reden: `skip_next` betekent *"de eerstvolgende keer niet"*, en die keer is
-   voorbij — of hij nu gemist werd door een herstart of bewust is overgeslagen. Bij
-   de andere lezing zou een overslag **dagenlang blijven hangen** als Home Assistant
-   een paar keer uit is geweest, en dan gaat de wekker niet af terwijl niemand nog
-   weet waarom. Een overslag die te lang meegaat is erger dan een overslag die één
-   ochtend te vroeg opgaat: de eerste is een stille wekker, de tweede een wekker die
-   afgaat terwijl je hem uit had willen hebben — en dát merk je meteen.
-
-   Gevolg voor de volgorde in de code: de `skip_next`-controle staat **vóór** de
-   venstertoets van stap 5 en 6, niet erna.
+   De nummering blijft staan: doorschuiven zou elke verwijzing naar "stap 3" en
+   "stap 5" in de code, de rapporten en de commitgeschiedenis stil naar een andere
+   stap laten wijzen.
 5. Ligt het moment **minder dan 30 minuten** in het verleden, dan **gaat de
    wekker nu af**, met de volledige procedure uit
    [sectie 9.1](#91-de-volgorde) inclusief noodrem.
@@ -1519,10 +1516,6 @@ dat de categorie "mededeling" bestaat naast "fout"
 ([11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt)). Het is
 **geen** storing en het ziet er ook niet als een storing uit: andere kleur, andere
 formulering, en géén `persistent_notification`.
-
-Voor een wekker die door `skip_next` is overgeslagen (stap 4) geldt hetzelfde
-mechanisme met `kind: "skipped_by_user"` — óók een mededeling, want de klant heeft
-het zelf ingesteld en hoeft er niets aan te doen.
 
 **Waarom 30 minuten en niet korter of langer** is de keuze van de eigenaar en
 staat hier alleen vastgelegd. Het getal is hetzelfde als de automatische stop uit
@@ -1575,7 +1568,6 @@ Per wekker:
 | `time` | string `"HH:MM"` | ja | 24-uurs, seconden bestaan niet |
 | `days` | array van int | ja | ISO-weekdagen **1 = maandag … 7 = zondag**. **Lege array = eenmalige wekker** |
 | `enabled` | bool | ja | de schakelaar op de kaart |
-| `skip_next` | bool | ja | eenmalig overslaan |
 | `one_shot_at` | string of `null` | ja | ISO-8601 **met tijdzone**, alleen gevuld als `days` leeg is: het ene moment waarop deze wekker afgaat |
 | `sound` | object | ja | `{ "uri", "name", "media_type", "image" }` — zie [8.2](#82-sla-de-uri-op-niet-de-naam) |
 | `speaker` | string | ja | `entity_id` van de MA-speaker |
@@ -1616,8 +1608,8 @@ De afweging:
   wekker en toont daar de meest recente gebeurtenis.
 
 De prijs van één veld is expliciet: **een nieuwe melding overschrijft de vorige.**
-Is een wekker gisteren mislukt en vandaag overgeslagen, dan ziet de klant alleen
-het overslaan. Dat is aanvaard — de klant wil weten wat er vanochtend gebeurde,
+Is een wekker gisteren mislukt en vanochtend gemist doordat Home Assistant uit
+stond, dan ziet de klant alleen dat laatste. Dat is aanvaard — de klant wil weten wat er vanochtend gebeurde,
 niet een logboek. Wie de geschiedenis wil, kijkt in het log
 ([19.5](#195-logniveaus)).
 
@@ -1636,7 +1628,6 @@ nooit een terugvalwaarde tonen die niet opgeslagen wordt:
 | `time` | **VOORSTEL** `07:00` |
 | `days` | leeg (eenmalig) |
 | `enabled` | `true` |
-| `skip_next` | `false` |
 | `volume_pct` | **VOORSTEL** `40` |
 | `light` | `null` |
 
@@ -1663,7 +1654,6 @@ weekendwekker **zonder**, en een **eenmalige** wekker zonder herhaaldagen.
             "time": "06:45",
             "days": [1, 2, 3, 4, 5],
             "enabled": true,
-            "skip_next": false,
             "one_shot_at": null,
             "sound": {
               "uri": "spotify--ZvzrFmgX://playlist/37i9dQZF1DX0UrRvztWcAU",
@@ -1686,7 +1676,6 @@ weekendwekker **zonder**, en een **eenmalige** wekker zonder herhaaldagen.
             "time": "09:00",
             "days": [6, 7],
             "enabled": true,
-            "skip_next": true,
             "one_shot_at": null,
             "sound": {
               "uri": "somafm://radio/beatblender",
@@ -1706,7 +1695,6 @@ weekendwekker **zonder**, en een **eenmalige** wekker zonder herhaaldagen.
             "time": "05:20",
             "days": [],
             "enabled": true,
-            "skip_next": false,
             "one_shot_at": "2026-08-12T05:20:00+02:00",
             "sound": {
               "uri": "somafm://radio/groovesalad",
@@ -1781,15 +1769,39 @@ zette `enabled` nooit om — gevonden in productie op 1.0.0.*
   `version` in het bestand dan de code aankan, dan gooit HA zelf
   `UnsupportedStorageVersionError` (`helpers/storage.py:437-440`). Dat is gewenst:
   liever falen dan een nieuw formaat half interpreteren.
-- Migraties zijn **puur en zonder verlies**: kan een migratie een veld niet
-  omzetten, dan faalt ze in plaats van het veld weg te laten.
-- **Migratie slaat kapotte personen over.** Een persoon die niet valideert
-  ([sectie 19.2](#192-onleesbare-of-ongeldige-opslag)) wordt niet gemigreerd; hij
-  blijft in het oude formaat staan en blijft gemarkeerd. Je kunt niet
-  betrouwbaar omzetten wat je niet kunt lezen.
+- Migraties zijn **puur**, en verliezen alleen wat hier bij naam genoemd staat.
+  Kan een migratie een veld niet omzetten, dan **faalt** ze in plaats van het veld
+  stil weg te laten. Een veld dat met opzet vervalt is iets anders dan een veld
+  dat niet om te zetten is; dat eerste hoort in de lijst hieronder te staan.
+- **Een migratie raakt alleen wat ze kent.** Alles wat niet in de lijst van
+  vervallen velden staat, gaat ongewijzigd door naar de validatie — ook onbekende
+  velden, ook kapotte structuren. Een migratie die de data "opschoont" naar wat de
+  code van vandaag verwacht, zou een schrijffout onzichtbaar maken en de scheiding
+  uit [19.2](#192-onleesbare-of-ongeldige-opslag) van zijn werk beroven.
 
-In v1 bestaat er nog geen oudere versie, dus `_async_migrate_func` hoeft alleen
-te bestaan en `NotImplementedError` te gooien voor onbekende versies.
+**Correctie, fase 7.** Hier stond: *"Migratie slaat kapotte personen over. Een
+persoon die niet valideert wordt niet gemigreerd."* Dat is niet uitvoerbaar en het
+was nooit waar. Home Assistant draait `_async_migrate_func` **binnen**
+`Store.async_load`, dus vóórdat onze code ook maar één persoon heeft gezien — de
+scheiding tussen gezond en kapot bestaat op dat moment nog niet. Wat er in de
+plaats komt is de regel hierboven: de migratie raakt alleen de vervallen velden en
+laat de rest letterlijk staan, zodat een kapotte persoon daarna nog steeds als
+kapot herkend wordt en zijn onbewerkte waarde nog steeds terugkomt bij het
+schrijven.
+
+**Bijkomend, en het is geen keuze van ons:** een geslaagde migratie **schrijft**,
+ook als de opslag daarna onbruikbaar blijkt (geval C uit 19.2). HA doet dat zelf,
+direct na de migratie. De inhoud blijft daarbij ongemoeid; alleen het versienummer
+in het bestand gaat omhoog.
+
+#### Versiegeschiedenis
+
+| Van | Naar | Wat er gebeurt | Waarom een major |
+|---|---|---|---|
+| 1.1 | **2.1** | het veld `skip_next` wordt uit elke wekker verwijderd (fase 7, [15.5](#155-vervallen)) | de nieuwe code kan oude data **niet** zonder aanpassing lezen: `validatie.py` weigert onbekende velden en zet de hele persoon op onleesbaar ([19.2](#192-onleesbare-of-ongeldige-opslag) geval B). Zonder migratie verliest een bestaande klant al zijn wekkers, en hij ziet dat pas de eerste ochtend dat er niets afgaat |
+
+`minor_version` gaat bij een majorsprong terug naar 1: hij telt binnen een
+majorversie.
 
 ---
 
@@ -1860,7 +1872,7 @@ Maakt een wekker aan of werkt hem bij. Eén wekker per aanroep.
 optioneel `id`. **Ontbreekt `id`, dan is het een nieuwe wekker** en genereert de
 server er een.
 
-De server beheert zelf en accepteert **niet** van de kaart: `skip_next`,
+De server beheert zelf en accepteert **niet** van de kaart:
 `one_shot_at`, `last_fired`, `last_message`. Die worden bij een update
 overgenomen uit de bestaande wekker. Reden: het zijn geen gebruikerskeuzes maar
 boekhouding, en een kaart die ze mag zetten kan de inhaalslag uit
@@ -1893,9 +1905,6 @@ volledig geldige wekker eist, wat een half ingevulde rij niet is.
 **Invoer:** `person`, `alarm_id`, `enabled` (bool).
 **Uitvoer:** als `alarms/get`.
 **Fouten:** `not_found` als de wekker niet bestaat; verder de gemeenschappelijke.
-
-**VOORSTEL:** een wekker uitzetten **wist `skip_next`**. Uit-en-weer-aan is de
-manier waarop iemand "vergeet het maar" intrekt.
 
 **Een verlopen eenmalige wekker aanzetten geeft hem een nieuw moment.** Zet
 `enabled` op `true` bij een wekker met lege `days` waarvan de `one_shot_at` is
@@ -1933,15 +1942,26 @@ dat moment, dan wordt hij eerst gestopt volgens
 [9.4](#94-de-wekker-stopt-na-30-minuten) — inclusief het terugzetten van het
 volume. Anders blijft er geluid draaien voor een wekker die niet meer bestaat.
 
-### 15.5 `domotiapp_alarm/alarms/skip_next`
+### 15.5 VERVALLEN
 
-Eenmalig overslaan, en het terugdraaien daarvan.
+Hier stond `domotiapp_alarm/alarms/skip_next`: een wekker eenmalig overslaan. De
+eigenaar gebruikte het niet, en in fase 7 is de hele functie verwijderd — het
+commando, het veld `skip_next` uit het schema, de stap in het respijtvenster, de
+regel in [15.3](#153-domotiapp_alarmalarmsset_enabled), de weergave
+*"Morgen overgeslagen"* en de meldingssoort `skipped_by_user`.
 
-**Invoer:** `person`, `alarm_id`, `skip` (bool).
-**Uitvoer:** als `alarms/get`.
+**Het commando bestaat niet meer**, en dat is aan het antwoord te zien: HA geeft
+`unknown_command`. Dat is met opzet luider dan een handler die stil niets doet —
+een oude kaart die het nog aanroept, krijgt een fout in plaats van de indruk dat
+het gelukt is.
 
-`skip_next` wordt gewist zodra het overgeslagen moment voorbij is, of wanneer de
-wekker wordt uitgezet ([15.3](#153-domotiapp_alarmalarmsset_enabled)).
+**De nummering van 15.6 en verder blijft staan.** Doorschuiven zou elke verwijzing
+in de code, de rapporten en de commitgeschiedenis stil naar een ander commando
+laten wijzen, en het zijn er tientallen.
+
+Wat er met de bestaande opslag gebeurt, staat in
+[14.6](#146-schemaversie-en-migratie): schemaversie **2**, met een migratie die
+het veld verwijdert.
 
 ### 15.6 `domotiapp_alarm/sound/search`
 
@@ -2171,7 +2191,7 @@ dat gaten heeft. Het bericht gaat uit na elke geslaagde schrijfronde in de
 opslag, niet aan het eind van de vijf muterende commando's.
 
 Behalve die commando's schrijven namelijk ook de **planner** (`last_fired`, en de
-inhaalslag uit [13.4](#134-het-respijtvenster-30-minuten) die `skip_next` en
+inhaalslag uit [13.4](#134-het-respijtvenster-30-minuten) die
 `last_message` zet) en **[11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt)**
 (`last_message`) in de opslag. Dat zijn precies de wijzigingen die de klant niet
 zelf heeft aangevraagd — en dus de wijzigingen waarvan hij het meest heeft dat
@@ -2236,7 +2256,7 @@ melding in één browser, laat hem staan op het wandtablet, en zet hem terug bij
 eerstvolgende herlaadbeurt.
 
 **Dit is geen omweg naar de servervelden.** [15.2](#152-domotiapp_alarmalarmssave)
-legt vast dat `skip_next`, `one_shot_at`, `last_fired` en `last_message` **nooit
+legt vast dat `one_shot_at`, `last_fired` en `last_message` **nooit
 met een waarde van de kaart komen**, omdat een kaart die ze mag zetten de
 inhaalslag uit [13.4](#134-het-respijtvenster-30-minuten) om de tuin kan leiden.
 Die regel blijft onaangetast, en de vorm van dit commando is de reden:
@@ -2392,7 +2412,7 @@ persoon daarna kiest.
 | Handeling | Wie |
 |---|---|
 | Kaart zien, wekkerlijst lezen | iedere ingelogde gebruiker |
-| Wekker aanmaken, wijzigen, verwijderen, aan/uit, overslaan | **iedere ingelogde gebruiker** |
+| Wekker aanmaken, wijzigen, verwijderen, aan/uit | **iedere ingelogde gebruiker** |
 | Wekker stoppen | **iedere ingelogde gebruiker** |
 | Een melding wegklikken ("Begrepen") | **iedere ingelogde gebruiker** |
 | Geluid zoeken, voorbeeld spelen ([15.11](#1511-domotiapp_alarmpreviewstart)) | iedere ingelogde gebruiker |
@@ -2626,7 +2646,7 @@ wordt met een guard gevuld. Zie `CLAUDE.md` valkuil 1 en
 | `ERROR` | onleesbare opslag, mislukte schrijfactie, een wekker die niet is afgegaan |
 | `WARNING` | lamp kon niet aan; speaker verloor `VOLUME_SET`; oploop moest clampen; twee wekkers op dezelfde speaker |
 | `INFO` | een wekker overgeslagen wegens het respijtvenster — `kind: "skipped_grace_window"` ([13.4](#134-het-respijtvenster-30-minuten)) |
-| `DEBUG` | een wekker overgeslagen door de klant zelf (`kind: "skipped_by_user"`); registraties, hashberekening, elke planningsronde, elke opslagronde, welke MA-config-entry gekozen is |
+| `DEBUG` | registraties, hashberekening, elke planningsronde, elke opslagronde, welke MA-config-entry gekozen is |
 
 `INFO` staat er voor **precies één geval**, en het onderscheid met `DEBUG` is
 precies waar het om gaat: het respijtvenster is een gebeurtenis waar de klant
@@ -2775,8 +2795,8 @@ Elk punt met één regel waarom.
     ([8.2.1](#821-welke-soorten-getoetst-zijn)); voor luisterboeken was er geen
     provider. Werkt het niet, dan is dat één regel in de soortenlijst.
 12. **Er is één melding per wekker.** Een nieuwe overschrijft de vorige, dus een
-    wekker die gisteren mislukte en vandaag werd overgeslagen toont alleen het
-    overslaan ([14.2.1](#1421-één-veld-voor-fouten-én-mededelingen)).
+    wekker die gisteren mislukte en vanochtend gemist werd toont alleen dat
+    laatste ([14.2.1](#1421-één-veld-voor-fouten-én-mededelingen)).
 13. **De afgaan-toestand is niet beschikbaar voor automatiseringen.** Het is een
     abonnement en geen entiteit
     ([15.9](#159-domotiapp_alarmupdatessubscribe)).

@@ -32,8 +32,22 @@ DATA_VOORBEELD: Final = "voorbeeld"
 
 # --- Opslag (SPEC 14.1) -------------------------------------------------
 STORAGE_KEY: Final = f"{DOMAIN}.alarms"
-STORAGE_VERSION: Final = 1
+# **2 en niet 1.2**, en dat is de toets uit SPEC 14.6 letterlijk toegepast: gaat
+# `minor_version` omhoog als de nieuwe code oude data **zonder aanpassing** kan
+# lezen, en `version` als dat niet kan.
+#
+# Fase 7 haalt `skip_next` weg. De nieuwe code kan een oude wekker daardoor **niet**
+# lezen: `validatie.py` weigert onbekende velden en zet de hele persoon op
+# onleesbaar (SPEC 19.2 geval B). Dat is precies het geval dat een `version`-sprong
+# beschrijft — er moet iets aan de data gebeuren vóór ze bruikbaar is.
+#
+# `minor_version` gaat terug naar 1: hij telt binnen een majorversie.
+STORAGE_VERSION: Final = 2
 STORAGE_MINOR_VERSION: Final = 1
+
+# Velden die in een oudere schemaversie bestonden en er nu uit moeten. Eén plek,
+# zodat de migratie en de reden bij elkaar staan.
+VERVALLEN_VELDEN_V1: Final[frozenset[str]] = frozenset({"skip_next"})
 
 # --- Labels (SPEC 7.1) --------------------------------------------------
 # De namen die de eigenaar plakt. De integratie zoekt het label_id erbij en

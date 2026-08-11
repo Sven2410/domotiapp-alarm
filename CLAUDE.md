@@ -659,6 +659,10 @@ Vindplaatsen in `docs/fase-6b/RAPPORT.md`.
     menu bij een grote letter alsnog over de rand. Render het daarom eerst
     `visibility: hidden` — een element zonder layout heeft geen hoogte om te meten.
 
+    **Het menu zelf is in fase 7 vervallen** (valkuil 60), dus `plaatsMenu` bestaat
+    niet meer. Wat blijft gelden is de meetregel: leid de afmeting van iets dat je
+    plaatst nooit uit de CSS af als de gebruiker aan de lettergrootte kan draaien.
+
 59. **Een verdediging tegen data van een ánder wordt door geen enkele test
     geraakt.** De mutatieproef van 6b vond twee gaten, allebei in dezelfde functie:
     de `isinstance(..., bool)`-controle en de `STATE_UNAVAILABLE`-controle op een
@@ -669,6 +673,48 @@ Vindplaatsen in `docs/fase-6b/RAPPORT.md`.
     niet maakt maar wel toestaat (`unavailable` mét attributen, een string waar een
     bool hoort). Dit is valkuil 34 tweede rij, met een nieuw soort "ander pad": niet
     een ander codepad van onszelf, maar invoer die alleen van buiten kan komen.
+
+
+### Nieuw in fase 7
+
+Vindplaatsen in `docs/fase-7/RAPPORT.md`.
+
+60. **Een laag die klikken opvangt, hoort ook te verbergen wat eronder ligt.** Het
+    overloopmenu werd afgesloten met `position: fixed; inset: 0; z-index: 2`. Dat is
+    het **hele venster**, boven elke knop in de kaart, en zolang het menu openstond
+    ving die laag élke klik. Gemeten met een echte klik op de ⋮ van een andere rij:
+    `elementFromPoint` gaf `div.sluiter`, de klik landde daarop, en het menu ging
+    alleen dicht. Voor de klant: ongeveer de helft van de tikken doet zichtbaar
+    niets — hij meldde het als *"het opent maar heel af en toe"*.
+    **De regel:** een modale dialoog mag het scherm doodleggen, want dan zie je dat
+    ook. Een menu dat naast een zichtbaar klikbare knop staat, mag dat niet. En de
+    goedkoopste uitweg is geen laag: een bevestiging die de rijen **uit elkaar
+    duwt** overlapt per constructie niets.
+
+61. **Een klikvolgorde die alleen het gelukkige pad afloopt, vindt nooit de
+    toestand die vastloopt.** Valkuil 60 zat er sinds fase 4a in en overleefde de
+    browserverificaties van 4a, 4b, 6b en de mutatieproeven. Reden: élke meting
+    opende het menu vanuit gesloten toestand en klikte daarna op een menu-item —
+    ⋮, item, ⋮, item. Dat is precies de ene volgorde waarin de fout zich niet
+    voordoet. **Klik in een UI-verificatie minstens één keer twee keer achter
+    elkaar op dezelfde knop, en één keer op de gelijksoortige knop van een andere
+    rij.** Fase 7 doet zes openingen over vier rijen en telt ze.
+
+62. **De `?v=` op de kaart-URL is GEEN cache-buster tegen HA's service worker.**
+    Gemeten: `cache.match('…card.js?v=<nieuw>', {ignoreSearch: true})` gaf de
+    bundel van een versie eerder terug. En `fetch(url, {cache: 'reload'})` gaat
+    door de service worker heen — die vervalt de HTTP-cache, niet de SW-cache; twee
+    keer achter elkaar leverde hij de oude bundel terwijl `curl` van buiten de
+    browser de nieuwe gaf.
+    **Gevolg dat verder gaat dan meten:** de kaart wordt langs twee routes geladen
+    (valkuil 3). Komt de index uit de cache met een oude `?v=`, dan wint de **oude**
+    module de registratierace en draait de klant een oude kaart achter een nieuwe
+    URL — de pagina toonde de vorige versie terwijl het `<script>`-element de
+    nieuwe `?v=` droeg.
+    **Wat wél werkt:** alle `file-cache`-entries van de kaart én de gecachte index
+    verwijderen, `navigator.serviceWorker.getRegistrations()` afmelden, en dan pas
+    navigeren. Verifieer daarna met een **cache-lezing** (`cache.match`, nooit een
+    `fetch`, valkuil 4) tegen de hash op schijf.
 
 ```bash
 npm install                # eenmalig
@@ -775,7 +821,8 @@ en die draait alleen bij opname in de standaardwinkel. Zie
 | 4c | De twee openstaande SPEC-punten van 4b gedicht: `sound/search` geeft per treffer `endless` (op dezelfde providerlijst als het afvuren) en `entities/list` geeft `filtered_out`, waarmee de drie situaties van SPEC 7.4 onderscheidbaar zijn. Het zoekveld past nu op een telefoon: placeholder "Zoek media", knop een vergrootglas. 77 JS- en 264 Python-tests, 23 mutaties in twee rondes | gemerged |
 | 5 | HACS-klaar: `manifest.json` en `hacs.json` geverifieerd tegen hassfest én HACS' eigen schema's (beide echt gedraaid, met negatieve controle), README herschreven voor de klant, en de installatie bewezen op een verse HA op 8130 waar de integratie als **kopie** in staat zoals HACS hem levert. Geen functionele wijziging | gemerged, 1.0.0 |
 | 6 | Drie bevindingen uit productie op 1.0.0. (1) Shuffle staat nu altijd aan bij afspeellijst, album en artiest — `media_player.shuffle_set` vóór `play_media`, want MA schudt bij het laden van de queue (SPEC 9.6, nieuw). (2) De melding `sound_gone` zei "bestaat niet meer" terwijl het geluid bestond; hij zegt nu "kon niet gestart worden" mét de reden van MA (SPEC 11.7 herschreven — buiten de gestelde grens, gemeld). (3) Een afgelopen eenmalige wekker zette zichzelf nooit uit terwijl SPEC 14.5 dat sinds fase 2 eist; dat is nu op alle drie de routes gerepareerd, en opnieuw aanzetten geeft een nieuwe `one_shot_at` (SPEC 15.3). 297 Python-tests, 22 mutaties in twee rondes (3 gaten gedicht). Audit van SPEC 11.7: nog twee teksten claimen te veel | gemerged |
-| **6b** | **Vier bevindingen. (1) Het overloopmenu bleef onder de kaart hangen — HA heeft géén bruikbare menu-component (gemeten), dus een eigen `position: fixed` menu dat omhoog klapt en binnen de kaart blijft; gemeten op 373 px: was 71 px buiten de kaart, is nu 57 px erbinnen. (2) De kopbalk met de eerstvolgende wektijd en de plusknop staat nu **boven** de lijst; de lege staat ís die kopbalk (SPEC 3.1–3.3). (3) De laatste twee liegende teksten herschreven, mét het patroon erachter (SPEC 11.7). (4) Shuffle gaat na de wekker terug naar wat het was, met de drie regels van SPEC 9.5; live `false → true → false`. 308 Python- en 91 JS-tests, 23 mutaties in twee rondes (2 gaten gedicht)** | **deze ronde, PR #14** |
+| 6b | Vier bevindingen. (1) Het overloopmenu bleef onder de kaart hangen — HA heeft géén bruikbare menu-component (gemeten), dus een eigen `position: fixed` menu dat omhoog klapt en binnen de kaart blijft; gemeten op 373 px: was 71 px buiten de kaart, is nu 57 px erbinnen. (2) De kopbalk met de eerstvolgende wektijd en de plusknop staat nu **boven** de lijst; de lege staat ís die kopbalk (SPEC 3.1–3.3). (3) De laatste twee liegende teksten herschreven, mét het patroon erachter (SPEC 11.7). (4) Shuffle gaat na de wekker terug naar wat het was, met de drie regels van SPEC 9.5; live `false → true → false`. 308 Python- en 91 JS-tests, 23 mutaties in twee rondes (2 gaten gedicht) | gemerged, 1.0.1 |
+| **7** | **De prullenbak, en overslaan eruit. De bevinding eerst uitgezocht: het menu opende maar half, en de oorzaak was een `position: fixed; inset: 0`-laag die sinds fase 4a élke klik op de kaart opving (valkuil 60). Het menu is vervangen door één prullenbakknop per rij met een bevestiging die naam en tijd noemt — geen `ha-dialog`, want die is in 2026.8 van mwc naar Web Awesome gegaan en zijn knoppen kwamen als 0 x 0 uit de verf (gemeten). `skip_next` is volledig verwijderd, met een migratie van schemaversie **1 naar 2**; live bewezen op een echte oude `.storage`: 4 wekkers, 0 onleesbaar. 314 Python- en 85 JS-tests, 15 mutaties in twee rondes (2 gaten gedicht, 1 mutatie was zelf fout)** | **deze ronde, PR #15** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -998,10 +1045,32 @@ nog iets dat de code niet vaststelt, en laat de wekker geen shuffle meer aan sta
    lezen was, en niets terugzetten wat we niet hebben aangezet. Dat laatste is geen
    zuinigheid: het voorkomt dat we een wijziging van de klant zelf ongedaan maken.
 
+**Wat er staat na fase 7:** de kaart heeft één handeling per rij die het altijd
+doet. Het overloopmenu is weg en daarmee de laag die er sinds fase 4a onder lag en
+elke klik opving; er zweeft **niets** meer boven de kaart. Het overslaan bestaat
+niet meer — niet als knop, niet als commando, niet als veld — en de opslag staat op
+**schemaversie 2** met een migratie die het oude veld verwijdert.
+
+**De drie regels van fase 7 die je niet mag omdraaien** (zie
+`docs/fase-7/RAPPORT.md`):
+
+1. **Geen laag boven de kaart die klikken opvangt.** Een bevestiging die de rijen
+   uit elkaar duwt kan de bevinding per constructie niet herhalen (valkuil 60).
+2. **Klik in een UI-verificatie twee keer achter elkaar, en op de knop van een
+   andere rij.** Vier browserrondes liepen langs deze fout omdat ze alleen
+   ⋮ → item → ⋮ → item deden (valkuil 61).
+3. **De migratie raakt alleen wat bij naam in SPEC staat.** Al het andere gaat
+   letterlijk door naar de validatie, ook rommel — anders verliest de admin het
+   bewijs dat hem vertelt wat er stuk is (SPEC 14.6 en 19.2).
+
+En één ding om te weten vóór de volgende meting: **de `?v=` verslaat HA's service
+worker niet** (valkuil 62). Ruim de cache en de service worker op, en vergelijk met
+een `cache.match` tegen de hash op schijf.
+
 ### Waar de volgende fase begint
 
-`SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **elf** commando's die de
-kaart mag gebruiken; dat is de bron, niet dit bestand. Wat hieronder staat is wat je
+`SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **tien** commando's die de
+kaart mag gebruiken (15.5 is in fase 7 vervallen; de nummering schuift niet door); dat is de bron, niet dit bestand. Wat hieronder staat is wat je
 uit SPEC *niet* kunt lezen omdat het gemeten is.
 
 **Vier dingen die de kaart doet en waar je anders tegenaan loopt:**
@@ -1069,7 +1138,7 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | ~~De tekst bij `sound_gone` claimt te veel~~ **OPGELOST in fase 6**: hij zegt nu "kon niet gestart worden" met de reden van MA erbij | SPEC 11.7 | gedaan |
 | ~~`volume_ramp_unavailable` en `skipped_grace_window` claimen te veel~~ **OPGELOST in fase 6b**, met de voorstellen die de eigenaar heeft goedgekeurd. Het patroon erachter staat nu in valkuil 53 | SPEC 11.7 | gedaan |
 | ~~Shuffle wordt na de wekker niet teruggezet~~ **OPGELOST in fase 6b**: hij gaat terug met dezelfde drie regels als het volume (SPEC 9.6) | `afvuren.py` / SPEC 9.5, 9.6 | gedaan |
-| **Het overloopmenu is niet met het toetsenbord te bedienen.** Er is geen pijltjesnavigatie, geen focusval en geen Escape; HA's eigen menu-componenten die dat zouden oplossen bestaan niet op een dashboard (valkuil 57). `aria-haspopup`, `aria-expanded` en `role="menuitem"` staan er wél, dus een schermlezer kondigt het correct aan. Voor wandtablet en telefoon voldoende; voor toetsenbordgebruik niet | de kaart | bij gelegenheid |
+| **De verwijderbevestiging heeft geen focusval en geen Escape.** Het zijn twee gewone knoppen in een rij, dus Tab en Enter werken; wat ontbreekt is wat een echte dialoog zou meebrengen. `ha-dialog` bestaat wél op een dashboard, maar zijn sloten zijn in 2026.8 van mwc naar Web Awesome gegaan (`headerTitle`, `footer` in plaats van `primaryAction`/`secondaryAction`) en met de oude namen komen de knoppen als 0 x 0 uit de verf — gemeten in fase 7. Wie dit alsnog wil: gebruik `footer`, en weet dat de kaart zich dan aan de binnenkant van een net verbouwde HA-component bindt | de kaart | bij gelegenheid |
 | **De waarschuwing bij een eindig geluid blijft weg bij een BESTAANDE wekker.** `endless` komt uit `sound/search` en staat niet in de opslag — het is een eigenschap van de provider, niet van de keuze (SPEC 15.6). Wie hem ook wil zien bij het openen van een oude wekker, moet `endless` in de opslag zetten of `alarms/get` het laten meesturen. Aanvaard in fase 4c | SPEC 8.2 / 15.1 | **eigenaar**, als hij het mist |
 | **De provider-as van `endless` is niet live aangetoond**, alleen de soort-as: er is geen streamingprovider op deze instance (fase 0b). Unittests dekken het paar `spotify`/`somafm` op dezelfde soort | `radiomodus.py` | de eigenaar toetst het op zijn eigen HA |
 | **De tijdkiezer is niet op iOS of Android getoetst.** SPEC 5.2 eist alle drie de platformen. Gemeten is dat `<input type="time">` op desktop met toetsen én kliks werkt en dat `ha-time-input` op het dashboard **niet geladen** is (valkuil 50). Een echt apparaat is nodig | de editor | **eigenaar toetst dit op zijn telefoon** |
