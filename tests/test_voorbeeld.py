@@ -157,6 +157,64 @@ async def test_afmelden_stopt_het_geluid_en_zet_het_volume_terug(
     assert not voorbeeld.loopt_op(hass, "media_player.slaapkamer")
 
 
+async def test_het_voorbeeld_zet_shuffle_terug_bij_afmelden(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG. Bevinding 4 van fase 6b, ook voor het voorbeeld (SPEC 9.6).
+
+    Het voorbeeld schudt sinds fase 6 mee — anders laat het iets anders horen dan
+    wat er 's ochtends gebeurt. Precies daarom heeft het ook dezelfde bijwerking:
+    zonder terugzetten blijft de shuffle van de klant aan staan omdat hij één keer
+    op de voorbeeldknop drukte.
+
+    Het geluid is hier een **afspeellijst** en geen radio; met de standaard
+    `GELUID` zou er niets te schudden en dus niets terug te zetten zijn.
+    """
+    afspeellijst = {
+        "uri": "library://playlist/12",
+        "name": "Ochtend",
+        "media_type": "playlist",
+        "image": None,
+    }
+    huis.zet_shuffle_op(False)
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40, sound=afspeellijst))
+    assert antwoord["success"], antwoord
+    assert huis.shuffles() == [True]
+
+    await _stuur(
+        client, {"type": "unsubscribe_events", "subscription": antwoord["id"]}
+    )
+    await hass.async_block_till_done()
+
+    assert huis.shuffles() == [True, False], huis.namen()
+    assert huis.shuffle_stand is False
+
+
+async def test_het_voorbeeld_laat_shuffle_met_rust_bij_radio(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """REGRESSIEWACHT, en de positieve controle bij de test hierboven. Hij slaagt
+    op de oude code omdat daar bij radio niets met shuffle gebeurt.
+
+    Een implementatie die bij elk voorbeeld `shuffle_set` aanroept, komt door die
+    test heen en zet hier de shuffle van de klant om terwijl er niets te schudden
+    valt. Bij radio is er één stream en geen volgorde.
+    """
+    huis.zet_shuffle_op(True)
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40))
+    assert antwoord["success"], antwoord
+
+    await _stuur(
+        client, {"type": "unsubscribe_events", "subscription": antwoord["id"]}
+    )
+    await hass.async_block_till_done()
+
+    assert huis.shuffles() == [], huis.namen()
+    assert huis.shuffle_stand is True
+
+
 async def test_een_weggevallen_verbinding_stopt_het_voorbeeld(
     hass: HomeAssistant, hass_ws_client, huis: Speelhuis
 ) -> None:

@@ -115,12 +115,20 @@ def tekst_voor(kind: str, wekker: dict[str, Any], **extra: str) -> str:
     if kind == KIND_LIGHT_FAILED:
         return f"De wekker is afgegaan, maar de lamp '{lamp}' kon niet aangezet worden."
     if kind == KIND_VOLUME_RAMP_UNAVAILABLE:
+        # Was: "afgegaan op het ingestelde volume". Dat was een bewering over de
+        # uitkomst van een `volume_set` die niet gelezen wordt — en het is dezelfde
+        # aanroep die een regel eerder wéigerde (`afvuren.py:198-210`). Wat vaststaat
+        # is dat het volume niet te zetten was en dat de oploop daardoor vervalt.
         return (
-            "De wekker is afgegaan op het ingestelde volume; het oplopende volume was "
-            "op deze speaker niet mogelijk."
+            "De wekker is afgegaan, maar het volume was op deze speaker niet in te "
+            "stellen; het oplopende volume is overgeslagen."
         )
     if kind == KIND_SKIPPED_GRACE_WINDOW:
-        return f"Je wekker van {tijd} is niet afgegaan omdat Home Assistant uit stond."
+        # Was: "omdat Home Assistant uit stond". Dat is een oorzaak, en de code kent
+        # er geen: hij weet alleen dat het moment verstreek zonder `last_fired`. Een
+        # wekker die ná dat moment is aangemaakt meldt dit bij de eerstvolgende
+        # herstart, en dan zou de oude tekst onwaar zijn.
+        return f"Je wekker van {tijd} is niet afgegaan; Home Assistant heeft dat moment gemist."
     if kind == KIND_SKIPPED_BY_USER:
         return f"De wekker van {tijd} is overgeslagen, zoals je had ingesteld."
     raise ValueError(f"onbekende meldingssoort {kind!r}")

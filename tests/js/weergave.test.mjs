@@ -20,10 +20,13 @@ import { describe, it } from "node:test";
 import {
   TEKST_AFGELOPEN,
   TEKST_EENMALIG,
+  TEKST_GEEN_WEKKERS,
+  TEKST_GEEN_WEKKER_ACTIEF,
   TEKST_MELDING_ZONDER_TEKST,
   TEKST_OVERGESLAGEN,
   dagenTekst,
   isAfgelopen,
+  kopTekst,
   meldingVan,
   stopToestand,
   subtitel,
@@ -264,5 +267,57 @@ describe("stopToestand (SPEC 4)", () => {
     const stop = stopToestand([wekker()], ["a1f4", "a1f4", null, 7]);
     assert.deepEqual(stop.ids, ["a1f4"]);
     assert.equal(stop.naam, "Werk");
+  });
+});
+
+describe("kopTekst (SPEC 3.1 en 3.2)", () => {
+  it("toont de tekst die de server meestuurt (NIEUW GEDRAG)", () => {
+    const toestand = {
+      alarms: [{ id: "a" }],
+      next_fire: { at: "2026-08-12T06:45:00+02:00", text: "Morgen 06:45" },
+    };
+    assert.equal(kopTekst(toestand), "Morgen 06:45");
+  });
+
+  it("REKENT de tekst niet zelf uit (NIEUW GEDRAG)", () => {
+    // De belangrijkste eigenschap van deze functie, en de reden dat hij zo saai is.
+    // `at` en `text` spreken elkaar hier tegen; de kaart hoort `text` te tonen en
+    // niet uit `at` iets anders af te leiden (SPEC 3.3). Een implementatie die zelf
+    // rekent, valt hier door de mand.
+    const toestand = {
+      alarms: [{ id: "a" }],
+      next_fire: { at: "2026-08-12T06:45:00+02:00", text: "Over drie kwartier" },
+    };
+    assert.equal(kopTekst(toestand), "Over drie kwartier");
+  });
+
+  it("zegt 'geen wekkers ingesteld' als de lijst leeg is (NIEUW GEDRAG)", () => {
+    assert.equal(kopTekst({ alarms: [], next_fire: null }), TEKST_GEEN_WEKKERS);
+  });
+
+  it("onderscheidt 'geen wekkers' van 'geen wekker actief' (NIEUW GEDRAG)", () => {
+    // Twee verschillende dingen, en vóór fase 6b liepen ze door elkaar: een lege
+    // lijst kreeg dezelfde regel als een lijst waarin alles uit staat. De eerste
+    // vraagt "maak er een", de tweede "zet er een aan".
+    assert.equal(kopTekst({ alarms: [], next_fire: null }), TEKST_GEEN_WEKKERS);
+    assert.equal(
+      kopTekst({ alarms: [{ id: "a", enabled: false }], next_fire: null }),
+      TEKST_GEEN_WEKKER_ACTIEF,
+    );
+  });
+
+  it("valt terug op 'geen wekker actief' bij een lege of rare tekst (NIEUW GEDRAG)", () => {
+    const wekkers = [{ id: "a" }];
+    assert.equal(kopTekst({ alarms: wekkers, next_fire: { text: "   " } }), TEKST_GEEN_WEKKER_ACTIEF);
+    assert.equal(kopTekst({ alarms: wekkers, next_fire: { text: 42 } }), TEKST_GEEN_WEKKER_ACTIEF);
+    assert.equal(kopTekst({ alarms: wekkers }), TEKST_GEEN_WEKKER_ACTIEF);
+  });
+
+  it("valt niet om op een ontbrekende of kapotte toestand (NIEUW GEDRAG)", () => {
+    // De kaart tekent de kopbalk vóór het eerste antwoord binnen is, en `alarms`
+    // hoeft dan nog geen lijst te zijn. Gooien zou de hele kaart leeg laten.
+    assert.equal(kopTekst(undefined), TEKST_GEEN_WEKKERS);
+    assert.equal(kopTekst({}), TEKST_GEEN_WEKKERS);
+    assert.equal(kopTekst({ alarms: "twee" }), TEKST_GEEN_WEKKERS);
   });
 });

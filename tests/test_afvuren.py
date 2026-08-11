@@ -332,6 +332,193 @@ async def test_radio_wordt_niet_geschud(hass: HomeAssistant, hass_storage: dict)
     assert "music_assistant.play_media" in huis.namen()
 
 
+async def test_shuffle_gaat_bij_het_stoppen_terug_naar_wat_het_was(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. Bevinding 4 van fase 6b, en het is SPEC 9.5 in het klein.
+
+    Het volume gaat bij het stoppen terug met de motivatie "geen bijwerking die de
+    klant niet vroeg". Die redenering geldt woordelijk voor shuffle: speelt de klant
+    's middags een album, dan hoort dat niet geschud te zijn omdat zijn wekker dat
+    's ochtends nodig had.
+
+    De volgorde in de asserties is de eigenschap: **aan** vóór het geluid, **terug**
+    ná het stoppen.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage, afspeellijst())
+    huis.zet_shuffle_op(False)
+
+    await vuur(hass, registry_id)
+    assert huis.shuffles() == [True], huis.namen()
+
+    await afvuren.async_stop_afgaan(
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
+    )
+
+    assert huis.shuffles() == [True, False], huis.namen()
+    assert huis.shuffle_stand is False
+    # Ná het stoppen van het geluid, net als het volume: andersom zou de laatste
+    # seconde nog op de teruggezette stand spelen.
+    namen = huis.namen()
+    assert namen.index("media_player.media_stop") < len(namen) - namen[::-1].index(
+        "media_player.shuffle_set"
+    )
+
+
+async def test_shuffle_die_al_aan_stond_blijft_aan(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG, en de positieve controle op "terugzetten" tegenover "uitzetten".
+
+    Een implementatie die bij het stoppen gewoon `False` zet, komt door de test
+    hierboven heen en zet hier de shuffle uit die de klant zelf aan had staan. Dat
+    is precies de bijwerking die deze bevinding wilde wegnemen, alleen dan
+    andersom.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage, afspeellijst())
+    huis.zet_shuffle_op(True)
+
+    await vuur(hass, registry_id)
+    await afvuren.async_stop_afgaan(
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
+    )
+
+    assert huis.shuffles() == [True, True], huis.namen()
+    assert huis.shuffle_stand is True
+
+
+async def test_een_onleesbare_shuffle_wordt_niet_teruggezet(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """REGRESSIEWACHT — hij slaagt op de oude code, en dat is narekenbaar: daar
+    bestaat het terugzetten helemaal niet, dus "er wordt niets teruggezet" is er
+    triviaal waar. Zijn waarde ligt aan de andere kant, tegen een implementatie die
+    bij het stoppen altijd iets zet.
+
+    SPEC 9.5 en 9.6: nooit een verzonnen waarde terugzetten.
+
+    Een speaker die geen `shuffle`-attribuut meldt is niet hetzelfde als een speaker
+    waarvan shuffle uit staat. `False` terugzetten zou een keuze maken die we niet
+    kennen — en het is precies het geval dat valkuil 18 beschrijft: extra state
+    attributes verdwijnen zodra een entiteit `unavailable` is, dus juist op het
+    moment dat je de stand zou willen kennen is hij weg.
+
+    Het aanzetten gebeurt wél: dat is de wekker, en die gaat vóór.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage, afspeellijst())
+    huis.zet_shuffle_op(None)
+
+    await vuur(hass, registry_id)
+    assert huis.shuffles() == [True], "aanzetten gaat door, ook zonder leesbare stand"
+
+    huis.shuffle_stand = None  # het aanzetten heeft hem in de test-state gezet
+    await afvuren.async_stop_afgaan(
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
+    )
+
+    assert huis.shuffles() == [True], huis.namen()
+    assert (
+        abonnement.register_van(hass).actief.get((registry_id, ALARM_ID)) is None
+    ), "de wekker hoort wel gewoon gestopt te zijn"
+
+
+async def test_radio_laat_de_shuffle_van_de_klant_met_rust(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """REGRESSIEWACHT, om dezelfde reden als de test hierboven: op de oude code
+    gebeurt er bij radio sowieso niets met shuffle. Wat hij bewaakt is de
+    implementatie die het onderscheid laat vallen.
+
+    Wij zetten hem niet aan, dus wij zetten hem ook niet terug.
+
+    Dit is het onderscheid dat `async_shuffle_aan_voor` maakt met zijn `None`: bij
+    radio raken we shuffle niet aan, en dan is de stand van de speaker die van de
+    klant. Zou er tóch teruggezet worden, dan draaien we een wijziging terug die de
+    klant zélf tijdens de wekker maakte — een bijwerking in plaats van het weghalen
+    van een bijwerking.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage)  # SomaFM-radio
+    huis.zet_shuffle_op(True)
+
+    await vuur(hass, registry_id)
+    await afvuren.async_stop_afgaan(
+        hass, registry_id, PERSON_ENTITY_ID, ALARM_ID, abonnement.REASON_USER
+    )
+
+    assert huis.shuffles() == [], huis.namen()
+    assert huis.shuffle_stand is True
+
+
+async def test_een_shuffle_die_geen_boolean_is_telt_als_onleesbaar(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. Een verdediging tegen data van een ánder, niet tegen onszelf.
+
+    `shuffle` is een attribuut van een `media_player` die niet van ons is. HA's
+    eigen `MediaPlayerEntity` typeert hem als `bool | None`, maar de statemachine
+    dwingt niets af en een integratie die er `"true"` in zet is niemand tegen te
+    houden. Zou die string doorgegeven worden aan het terugzetten, dan gaat er een
+    `shuffle_set` uit met een waarde die geen shuffle-stand is.
+
+    Gevonden in de mutatieproef van fase 6b (M5): het weghalen van de
+    `isinstance`-controle bleef ongestraft, en dat kwam doordat geen enkele test
+    een niet-booleaanse waarde aanbood.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage, afspeellijst())
+    # Via het Speelhuis en niet met één `async_set`: het volume gaat bij het afgaan
+    # op 0, en dat schrijft de attributen opnieuw. Een losse `async_set` zou dus
+    # tussen de opzet en de meting weer weggepoetst worden.
+    huis.zet_shuffle_op("true")  # type: ignore[arg-type]
+
+    assert afvuren.shuffle_van(hass, huis.speaker) is None
+
+    await vuur(hass, registry_id)
+    context = abonnement.register_van(hass).actief[(registry_id, ALARM_ID)]
+    assert context[afvuren.CTX_SHUFFLE_VOOR] is None
+
+
+async def test_een_onbereikbare_speaker_levert_geen_shuffle_stand(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG, en het toetst de rem die valkuil 18 overbodig lijkt te maken.
+
+    In de praktijk verdwijnen extra state attributes zodra een entiteit
+    `unavailable` is, dus dan is `shuffle` er tóch niet. Maar dat is een **gemeten
+    eigenschap van Home Assistant** en geen garantie waar onze code op hoort te
+    leunen: `hass.states.async_set` staat elke combinatie toe, en een integratie die
+    zijn attributen laat staan bij een storing bestaat morgen.
+
+    Deze test bouwt precies die combinatie — `unavailable` mét een `shuffle` erin —
+    en legt vast dat de state zelf wint van het attribuut. Gevonden in de
+    mutatieproef van fase 6b (M23), waar het weghalen van de
+    `STATE_UNAVAILABLE`-controle ongestraft bleef.
+    """
+    _registry_id, huis = await zet_op(hass, hass_storage, afspeellijst())
+    hass.states.async_set(huis.speaker, "unavailable", {"shuffle": True})
+
+    assert afvuren.shuffle_van(hass, huis.speaker) is None
+    # Dezelfde rem als bij het volume; die staat er al sinds fase 3c.
+    assert afvuren.volume_pct_van(hass, huis.speaker) is None
+
+
+async def test_shuffle_wordt_gelezen_voordat_hij_gezet_wordt(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. Dezelfde regel als SPEC 9.5 voor het volume.
+
+    Erna lezen levert altijd `True` op — je eigen waarde — en dan zet het stoppen de
+    shuffle van iedereen aan. De opgeslagen context is het bewijs: daar staat de
+    stand van **vóór** de wekker.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage, afspeellijst())
+    huis.zet_shuffle_op(False)
+
+    await vuur(hass, registry_id)
+
+    context = abonnement.register_van(hass).actief[(registry_id, ALARM_ID)]
+    assert context[afvuren.CTX_SHUFFLE_VOOR] is False
+
+
 async def test_een_mislukte_shuffle_houdt_de_wekker_niet_tegen(
     hass: HomeAssistant, hass_storage: dict, caplog
 ) -> None:
@@ -363,7 +550,7 @@ async def test_een_mislukte_shuffle_houdt_de_wekker_niet_tegen(
     # exceptie dan zelf af (valkuil 42), onze `except` draait nooit, en niemand komt
     # er ooit achter dat de speaker geen shuffle aankan. Gemeten in de mutatieproef
     # van fase 6 (M19).
-    assert "Shuffle aanzetten" in caplog.text, caplog.text
+    assert "Shuffle aan zetten" in caplog.text, caplog.text
 
 
 # =======================================================================
@@ -904,6 +1091,31 @@ async def test_een_speaker_die_geen_volume_aanneemt_gaat_af_zonder_oploop(
     assert abonnement.register_van(hass).actief[(registry_id, ALARM_ID)][
         afvuren.CTX_OPLOOP
     ] is None
+
+
+async def test_de_melding_beweert_niet_dat_het_ingestelde_volume_gehaald_is(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. Bevinding 3 van fase 6b.
+
+    De tekst zei *"De wekker is afgegaan op het ingestelde volume"*. In de test
+    hierboven staat waarom dat niet waar is: **beide** `volume_set`-aanroepen zijn
+    geweigerd, en de tweede — die naar het ingestelde niveau — wordt niet eens
+    gelezen. Wat de speaker werkelijk doet is spelen op de stand van gisteravond,
+    en dat kan net zo goed onhoorbaar zijn als oorverdovend.
+
+    Wat vaststaat is dat het volume niet in te stellen was en dat de oploop daardoor
+    vervalt. Dat staat er nu.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage)
+    huis.faal.add("media_player.volume_set")
+
+    await vuur(hass, registry_id)
+
+    tekst = bericht(hass, registry_id)["text"]
+    assert "op het ingestelde volume" not in tekst, tekst
+    assert "niet in te stellen" in tekst, tekst
+    assert "overgeslagen" in tekst, tekst
 
 
 # =======================================================================

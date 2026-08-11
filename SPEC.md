@@ -131,9 +131,28 @@ De tweede route is **tijdelijk bedoeld**. Landt `frontend#53208` of
 Eén regel **"Geen wekkers ingesteld"** in `--secondary-text-color`, en een
 **plusknop**. Niets anders — geen uitleg, geen lege lijstkop.
 
+Die ene regel ís de kopbalk uit [3.2](#32-met-wekkers): links de tekst, rechts de
+plusknop. De kaart bestaat dan uit één rij.
+
+**Waarom niet de kopbalk plus een aparte lege regel eronder.** Dan staan er twee
+ontkenningen onder elkaar — "Geen wekker actief" boven "Geen wekkers ingesteld" —
+en heeft de kaart twee plusknoppen, of één die verspringt zodra de eerste wekker
+er is. De plusknop staat altijd op dezelfde plek.
+
+*Verduidelijkt in fase 6b, toen de kopbalk naar boven verhuisde.*
+
 ### 3.2 Met wekkers
 
-Een lijst, één rij per wekker, in de volgorde uit
+**Bovenaan een kopbalk**, met links de tekst uit
+[3.3](#33-de-regel-eerstvolgende-wekker) — *"Morgen 06:45"* — en rechts de
+**plusknop**. Daaronder de lijst.
+
+De kopbalk stond tot fase 6b **onder** de lijst. Met tien wekkers moest je dan
+scrollen om te zien wanneer je wekker gaat en om er een toe te voegen, en dat zijn
+precies de twee dingen waarvoor je de kaart openslaat. Op een telefoon is dat het
+verschil tussen wel en niet bruikbaar.
+
+Daaronder de lijst, één rij per wekker, in de volgorde uit
 [sectie 3.4](#34-sorteervolgorde). Per rij:
 
 | Onderdeel | Inhoud |
@@ -142,9 +161,6 @@ Een lijst, één rij per wekker, in de volgorde uit
 | Naam | de naam van de wekker, onder of naast de tijd |
 | Herhaaldagen | `ma di wo do vr` — of **"Eenmalig"** als er geen dag is aangevinkt |
 | Schakelaar | aan/uit, accentkleur `#026FA1` als hij aan staat |
-
-Onderaan de kaart, één regel: **wanneer de eerstvolgende wekker afgaat**, in de
-vorm **"Morgen 06:45"**. Zie [sectie 3.3](#33-de-regel-eerstvolgende-wekker).
 
 Een wekker is per rij:
 
@@ -158,6 +174,24 @@ Een wekker is per rij:
 overloopmenu (drie puntjes) per rij met twee items, **"Overslaan"** en
 **"Verwijderen"**. Verwijderen vraagt een bevestiging; overslaan niet, want dat
 is omkeerbaar met dezelfde knop.
+
+**Het menu blijft binnen de kaart.** Past het onder de knop niet meer binnen de
+onderrand, dan klapt het erboven. Dat is een eis en geen opmaakdetail: tot fase 6b
+hing het altijd onder de knop en stak het bij de onderste rij onder de kaart uit,
+over wat er op het dashboard onder stond — op een telefoon rommelig genoeg om
+gemeld te worden.
+
+Past het in geen van beide richtingen binnen de kaart — een kaart met één rij is
+lager dan het menu hoog is — dan wint het **venster**: liever een menu dat een
+randje over de kaart steekt dan een menu dat half buiten beeld valt en niet aan te
+klikken is.
+
+**GEMETEN in fase 6b** op HA 2026.8.1, en het is de reden dat dit met de hand
+gebouwd is: `ha-md-menu`, `ha-md-menu-item`, `ha-button-menu`, `ha-md-button-menu`
+en `ha-menu` zijn op een gewoon dashboard geen van alle gedefinieerd. Dat is
+[19.4](#194-nooit-gooien-op-modulescope)'s buurman: een niet-gedefinieerd custom
+element rendert als een leeg inline-element, dus een HA-menu zou hier een
+onzichtbaar menu zijn zonder fout in de console.
 
 ### 3.3 De regel "eerstvolgende wekker"
 
@@ -175,7 +209,11 @@ Vorm, **VOORSTEL**:
 | Morgen | `Morgen 06:45` |
 | Binnen 7 dagen | `Zaterdag 08:00` |
 | Verder weg | `Za 17 aug 08:00` |
-| Geen enkele wekker aan | `Geen wekker actief` |
+| Er zijn wekkers, maar geen enkele staat aan | `Geen wekker actief` |
+| Er is geen enkele wekker | `Geen wekkers ingesteld` ([3.1](#31-zonder-wekkers)) |
+
+De laatste twee zijn sinds fase 6b uit elkaar gehaald. Ze vragen iets anders van de
+gebruiker: "maak er een" tegenover "zet er een aan".
 
 ### 3.4 Sorteervolgorde
 
@@ -864,6 +902,9 @@ niet — de speaker is onbereikbaar en dan is `volume_level` er niet, want state
 attributes verdwijnen bij `unavailable` — dan wordt er **niets** teruggezet en
 wordt dat op `DEBUG` gelogd. Nooit een verzonnen waarde terugzetten.
 
+Sinds fase 6b geldt hetzelfde voor **shuffle**; zie
+[9.6](#96-shuffle-bij-media-met-meerdere-nummers).
+
 ### 9.6 Shuffle bij media met meerdere nummers
 
 **Shuffle staat altijd aan wanneer het gekozen geluid uit meerdere nummers
@@ -908,6 +949,29 @@ veroorzaken zou hier niet in verhouding staan
 **Het voorbeeld schudt mee** ([5.4](#54-de-voorbeeldknop)). Een voorbeeld dat
 altijd met nummer 1 begint terwijl de wekker schudt, laat iets anders horen dan
 wat er 's ochtends gebeurt.
+
+**Shuffle wordt bij het stoppen teruggezet**, met precies dezelfde drie regels als
+het volume in [9.5](#95-het-volume-wordt-teruggezet):
+
+1. de stand wordt **gelezen vóór** hij gezet wordt — erna lees je je eigen waarde
+   terug, en dan zet het stoppen de shuffle van iedereen aan;
+2. was hij **niet te lezen**, dan wordt er **niets** teruggezet. Een speaker die
+   geen `shuffle`-attribuut meldt is niet hetzelfde als een speaker waarvan shuffle
+   uit staat, en `false` terugzetten zou een keuze maken die we niet kennen. Dit is
+   [7.2](#72-vaststellen-dát-het-een-ma-speaker-is)'s valkuil: extra state
+   attributes verdwijnen zodra een entiteit `unavailable` is, dus juist op het
+   moment dat je de stand zou willen kennen is hij weg;
+3. hebben we shuffle **niet aangezet** (radio, een los nummer), dan zetten we ook
+   niets terug. De stand van de speaker is dan die van de klant — en had hij hem
+   tijdens de wekker zelf omgezet, dan zou terugzetten zíjn wijziging ongedaan
+   maken.
+
+Het terugzetten gebeurt **ná** `media_stop`, net als het volume. Dat botst niet met
+de regel dat shuffle vóór `play_media` moet: die gaat over het **laden** van een
+queue, en er wordt op dat moment geen queue geladen.
+
+*Terugzetten toegevoegd in fase 6b. De motivatie is letterlijk die van 9.5: geen
+bijwerking die de klant niet vroeg.*
 
 **Twee dingen die MA zelf al goed doet**, en die de integratie dus niet hoeft na
 te bouwen: een queue met één item wordt nooit geschud (`len(queue_items) > 1`),
@@ -1247,13 +1311,13 @@ Teksten bij `severity: "error"`:
 | `sound_gone` | **"De wekker van 06:45 is niet afgegaan: het geluid 'Beat Blender' kon niet gestart worden. Music Assistant meldde: "No playable items found". Controleer het geluid in Music Assistant, of kies een ander."** — het middelste deel staat er alleen als MA een reden meegaf; zie hieronder |
 | `speaker_lost_during_play` | **"De wekker van 06:45 is mogelijk niet hoorbaar geweest: de speaker 'Slaapkamer' viel weg tijdens het spelen."** |
 | `light_failed` | **"De wekker is afgegaan, maar de lamp 'Bedlamp' kon niet aangezet worden."** |
-| `volume_ramp_unavailable` | **"De wekker is afgegaan op het ingestelde volume; het oplopende volume was op deze speaker niet mogelijk."** |
+| `volume_ramp_unavailable` | **"De wekker is afgegaan, maar het volume was op deze speaker niet in te stellen; het oplopende volume is overgeslagen."** |
 
 Teksten bij `severity: "notice"`:
 
 | `kind` | Tekst op de kaart |
 |---|---|
-| `skipped_grace_window` | **"Je wekker van 06:45 is niet afgegaan omdat Home Assistant uit stond."** |
+| `skipped_grace_window` | **"Je wekker van 06:45 is niet afgegaan; Home Assistant heeft dat moment gemist."** |
 | `skipped_by_user` | **"De wekker van 06:45 is overgeslagen, zoals je had ingesteld."** |
 
 De eerste is de tekst die de eigenaar heeft vastgelegd, en de reden dat deze hele
@@ -1278,6 +1342,30 @@ veranderd.
 vervalt dat deel van de zin — geen leeg citaat en geen verzonnen oorzaak. Van de
 teruggegeven fout wordt alleen de **eerste regel** gebruikt: MA zet de mededeling
 daar, en wat erna komt is context voor een log en niet voor een kaart.
+
+**In fase 6b zijn er nog twee herschreven**, en beide om dezelfde reden. Ze stonden
+als openstaand punt genoteerd omdat de woordkeuze aan de eigenaar was; hij ging
+akkoord met de voorstellen uit `docs/fase-6/RAPPORT.md`.
+
+`volume_ramp_unavailable` zei *"De wekker is afgegaan **op het ingestelde
+volume**"*. Deze melding ontstaat doordat `volume_set(0)` weigerde; daarna doet de
+integratie één poging tot het ingestelde niveau — **met dezelfde service die net
+weigerde** — en die uitkomst wordt niet gelezen. Wat de speaker werkelijk doet is
+spelen op de stand van gisteravond, en die kan net zo goed onhoorbaar zijn als
+oorverdovend. Wat vaststaat is dat het volume niet in te stellen was en dat de
+oploop daardoor vervalt.
+
+`skipped_grace_window` zei *"**omdat Home Assistant uit stond**"*. Wat de
+inhaalslag vaststelt is smaller: dit moment is verstreken, er staat geen
+`last_fired` op, en het ligt verder dan het respijtvenster terug. Een narekenbaar
+tegenvoorbeeld waarin de oude tekst onwaar was:
+
+> Iemand maakt om 12:00 een wekker voor 06:45 vandaag. Home Assistant draait de
+> hele dag door. Bij de eerstvolgende herstart vindt de inhaalslag een verstreken
+> 06:45 zonder `last_fired`, en meldt dat Home Assistant uit stond.
+
+De **soort** klopte in beide gevallen; alleen de oorzaak was gegist. Dat is het
+patroon: elke tekst die het waaróm invult in plaats van het wát, is een kandidaat.
 
 **b) Een `persistent_notification`.** Die verschijnt in HA's eigen meldingenlijst
 en overleeft dat niemand de kaart opent. De klant krijgt hem weg met HA's eigen

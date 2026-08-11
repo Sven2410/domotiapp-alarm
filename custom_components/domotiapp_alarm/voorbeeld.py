@@ -65,6 +65,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # Sleutels in de context per lopend voorbeeld.
 CTX_VOLUME_VOOR = "volume_voor"
+CTX_SHUFFLE_VOOR = "shuffle_voor"
 CTX_UNSUB_MAX = "unsub_max"
 
 REDEN_TIMEOUT = "timeout"
@@ -159,8 +160,11 @@ async def async_start(
     # 6. Shuffle, net als bij het afgaan (SPEC 9.6) en om dezelfde reden vóór
     #    `play_media`. Een voorbeeld dat altijd met nummer 1 begint terwijl de
     #    wekker schudt, laat iets anders horen dan wat er 's ochtends gebeurt —
-    #    en dan is het geen voorbeeld.
-    await afvuren.async_zet_shuffle(hass, speaker, (geluid or {}).get("media_type"))
+    #    en dan is het geen voorbeeld. De oude stand gaat mee terug bij het
+    #    stoppen, net als het volume.
+    shuffle_voor = await afvuren.async_shuffle_aan_voor(
+        hass, speaker, (geluid or {}).get("media_type")
+    )
 
     try:
         await hass.services.async_call(
@@ -176,12 +180,21 @@ async def async_start(
         # poging.
         if volume_voor is not None:
             await afvuren.async_zet_volume(hass, speaker, volume_voor)
+        # Zelfde redenering voor shuffle: hij is al verzet, dus hij hoort terug ook
+        # al heeft er niets gespeeld. Er komt hierna geen `async_stop` die het nog
+        # doet — dit voorbeeld heeft nooit in het register gestaan.
+        if shuffle_voor is not None:
+            await afvuren.async_zet_shuffle(hass, speaker, shuffle_voor)
         raise VoorbeeldGeweigerd(
             "sound_gone",
             f"Het geluid '{(geluid or {}).get('name') or uri}' kon niet gestart worden.",
         ) from fout
 
-    context: dict[str, Any] = {CTX_VOLUME_VOOR: volume_voor, CTX_UNSUB_MAX: None}
+    context: dict[str, Any] = {
+        CTX_VOLUME_VOOR: volume_voor,
+        CTX_SHUFFLE_VOOR: shuffle_voor,
+        CTX_UNSUB_MAX: None,
+    }
     _register(hass)[speaker] = context
     context[CTX_UNSUB_MAX] = async_call_later(
         hass, VOORBEELD_MAX_MINUTEN * 60, _maak_maximum(hass, speaker)
@@ -227,8 +240,8 @@ async def async_stop(hass: HomeAssistant, speaker: str, *, reden: str) -> bool:
     hier uitkomen.
 
     Zelfde volgorde als bij een wekker: eerst uit het register, dan de timer,
-    dan het geluid, en pas daarna het volume — andersom klinkt de laatste
-    seconde op het oude niveau.
+    dan het geluid, en pas daarna het volume en de shuffle — andersom klinkt de
+    laatste seconde op het oude niveau.
     """
     context = _register(hass).pop(speaker, None)
     if context is None:
@@ -253,6 +266,13 @@ async def async_stop(hass: HomeAssistant, speaker: str, *, reden: str) -> bool:
         )
     else:
         await afvuren.async_zet_volume(hass, speaker, volume_voor)
+
+    # Shuffle op precies dezelfde voorwaarden (SPEC 9.6). `None` is óf "wij hebben
+    # hem niet aangezet" óf "de oude stand was niet te lezen"; niets doen is dan het
+    # juiste, want anders zetten we een keuze van de klant terug die wij niet maakten.
+    shuffle_voor = context.get(CTX_SHUFFLE_VOOR)
+    if shuffle_voor is not None:
+        await afvuren.async_zet_shuffle(hass, speaker, shuffle_voor)
 
     _LOGGER.debug("Voorbeeld op %s gestopt (%s)", speaker, reden)
     return True

@@ -123,6 +123,38 @@ export function meldingVan(wekker) {
 }
 
 /**
+ * De tekst links in de kopbalk (SPEC 3.1 en 3.2).
+ *
+ * Sinds fase 6b staat de kopbalk **boven** de lijst in plaats van eronder. De
+ * aanleiding: met tien wekkers moest je scrollen om te zien wanneer je wekker gaat
+ * en om er een toe te voegen.
+ *
+ * Twee gevallen, en het onderscheid is scherper dan het was:
+ *
+ * | Situatie | Tekst |
+ * |---|---|
+ * | er is geen enkele wekker | `"Geen wekkers ingesteld"` |
+ * | er zijn wekkers, maar geen enkele staat aan | `"Geen wekker actief"` |
+ * | er is een eerstvolgende | `next_fire.text`, kant-en-klaar van de server |
+ *
+ * Vóór 6b viel het eerste geval samen met het tweede zodra je naar de voetregel
+ * keek — er stond dan "Geen wekker actief" onder een lege lijst, en dat is
+ * omslachtig voor "je hebt er nog geen".
+ *
+ * **De tekst wordt nooit berekend, alleen gekozen.** `next_fire.text` komt
+ * server-side vandaan (SPEC 3.3); de kaart mag de planning uit SPEC 13 niet
+ * dupliceren.
+ */
+export function kopTekst(toestand) {
+  const wekkers = toestand?.alarms;
+  if (!Array.isArray(wekkers) || wekkers.length === 0) {
+    return TEKST_GEEN_WEKKERS;
+  }
+  const tekst = toestand?.next_fire?.text;
+  return typeof tekst === "string" && tekst.trim() ? tekst : TEKST_GEEN_WEKKER_ACTIEF;
+}
+
+/**
  * Wordt de kaart een stopknop, en wat staat erin (SPEC 4)?
  *
  * `null` betekent: rusttoestand. Anders `{ ids, naam, tijd }`, waarbij `ids`

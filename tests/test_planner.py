@@ -284,8 +284,62 @@ async def test_herstart_45_minuten_te_laat_slaat_over_met_mededeling(
     assert message is not None, "er hoort een mededeling te staan"
     assert message["kind"] == meldingen.KIND_SKIPPED_GRACE_WINDOW
     assert message["severity"] == "notice"
+    # NIEUW GEDRAG sinds fase 6b. De tekst zei "omdat Home Assistant uit stond",
+    # en dat is een oorzaak die hier niet is vastgesteld: wat vaststaat is dat het
+    # moment verstreek zonder `last_fired`. Zie de test hieronder voor het
+    # tegenvoorbeeld waarin die oude tekst aantoonbaar onwaar was.
     assert message["text"] == (
-        "Je wekker van 06:45 is niet afgegaan omdat Home Assistant uit stond."
+        "Je wekker van 06:45 is niet afgegaan; Home Assistant heeft dat moment gemist."
+    )
+    assert "uit stond" not in message["text"]
+
+
+async def test_de_mededeling_beweert_niet_dat_home_assistant_uit_stond(
+    hass: HomeAssistant, hass_storage, freezer
+) -> None:
+    """NIEUW GEDRAG. Bevinding 3 van fase 6b, met het tegenvoorbeeld erbij.
+
+    De oude tekst zei *"omdat Home Assistant uit stond"*. Wat de inhaalslag
+    vaststelt is iets veel smallers: dit moment is verstreken, er staat geen
+    `last_fired` op, en het ligt verder dan 30 minuten terug. Daaruit volgt de
+    oorzaak niet.
+
+    Deze test bouwt het tegenvoorbeeld letterlijk: Home Assistant draait **de hele
+    tijd**, en er komt om 12:00 een wekker bij voor 06:45 vandaag. Bij de
+    eerstvolgende herplanning met inhaalslag — een herstart, in productie — meldt
+    de integratie dit moment als gemist. Dat is correct gedrag (er ís niets
+    afgegaan), maar de oude tekst zou hier aantoonbaar hebben gelogen: HA stond aan
+    en heeft geen seconde gemist.
+    """
+    freezer.move_to(dt.datetime(2026, 8, 10, 12, 0, tzinfo=AMS))
+    # Begin met een wekker die al is afgegaan, zodat de setup zelf niets meldt.
+    registry_id = await zet_op(
+        hass,
+        [
+            volledige_wekker(
+                time="06:45",
+                days=[1, 2, 3, 4, 5],
+                last_fired=dt.datetime(2026, 8, 10, 6, 45, tzinfo=AMS).isoformat(),
+            )
+        ],
+        hass_storage,
+    )
+    assert uit_opslag(hass, registry_id)["last_message"] is None, "schone beginstand"
+
+    # Nu, om 12:00 en met HA gewoon aan, komt er een tweede wekker bij voor 06:45.
+    store = hass.data[DOMAIN][DATA_STORE]
+    tweede = volledige_wekker(id="b" * 32, time="06:45", days=[1, 2, 3, 4, 5])
+    await store.async_zet_wekker(registry_id, tweede)
+    # Met inhaalslag, want dat is wat een herstart doet — de gewone `async_herplan`
+    # uit `websocket.py` haalt niets in (SPEC 13.5).
+    await hass.data[DOMAIN][DATA_PLANNER].async_herplan(met_inhaalslag=True)
+
+    message = uit_opslag(hass, registry_id, "b" * 32)["last_message"]
+    assert message is not None
+    assert message["kind"] == meldingen.KIND_SKIPPED_GRACE_WINDOW
+    assert "uit stond" not in message["text"], message["text"]
+    assert message["text"] == (
+        "Je wekker van 06:45 is niet afgegaan; Home Assistant heeft dat moment gemist."
     )
 
 

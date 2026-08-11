@@ -12,7 +12,7 @@ scheiding is van fase 3b en is in fase 3c niet aangeraakt: de planner is af.
 | 2 | huidig volume **lezen** | SPEC 9.5: vóór stap 3, want daarna is het weg |
 | 3 | volume op **0** | vóór stap 6, anders is er één harde uitbarsting |
 | 4 | wake-up light aan | SPEC 12, als ingesteld |
-| 5 | shuffle aan | SPEC 9.6 — vóór stap 6, want MA schudt bij het laden van de queue |
+| 5 | shuffle **lezen** en aanzetten | SPEC 9.6 — vóór stap 6, want MA schudt bij het laden van de queue |
 | 6 | geluid starten | `music_assistant.play_media` |
 | 7 | volume-oploop | 20 stappen van 1 s naar het ingestelde niveau |
 | 8 | noodrem achteraf | 5 s ná stap 6 (SPEC 11.3) |
@@ -99,6 +99,7 @@ CTX_PERSON = "person"
 CTX_MOMENT = "moment"
 CTX_SPEAKER = "speaker"
 CTX_VOLUME_VOOR = "volume_voor"
+CTX_SHUFFLE_VOOR = "shuffle_voor"
 CTX_OPLOOP = "oploop"
 CTX_UNSUB_NOODREM = "unsub_noodrem"
 CTX_UNSUB_STOP = "unsub_stop"
@@ -216,7 +217,13 @@ async def async_laat_afgaan(
     # Music Assistant past shuffle toe op het moment dat de queue geladen wordt.
     # Ná `play_media` is het eerste nummer al gekozen en schud je alleen de rest —
     # dan begint de wekker elke ochtend hetzelfde. Zie `shuffle.py`.
-    await async_zet_shuffle(hass, speaker, (wekker.get("sound") or {}).get("media_type"))
+    #
+    # De oude stand gaat mee in de context, net als het volume: bij het stoppen
+    # wordt hij teruggezet (SPEC 9.6), want shuffle die aan blijft staan is een
+    # bijwerking die de klant niet vroeg.
+    shuffle_voor = await async_shuffle_aan_voor(
+        hass, speaker, (wekker.get("sound") or {}).get("media_type")
+    )
 
     # --- stap 6: geluid starten ----------------------------------------
     gelukt, ma_reden = await _async_start_geluid(hass, speaker, wekker.get("sound") or {})
@@ -261,6 +268,7 @@ async def async_laat_afgaan(
         CTX_MOMENT: moment.isoformat(),
         CTX_SPEAKER: speaker,
         CTX_VOLUME_VOOR: volume_voor,
+        CTX_SHUFFLE_VOOR: shuffle_voor,
         CTX_OPLOOP: None,
         CTX_UNSUB_NOODREM: None,
         CTX_UNSUB_STOP: None,
@@ -361,31 +369,83 @@ async def _async_faal(
 # =======================================================================
 
 
-async def async_zet_shuffle(
-    hass: HomeAssistant, speaker: str, media_type: str | None
-) -> None:
-    """Zet shuffle aan als het geluid meerdere nummers heeft (SPEC 9.6).
+def shuffle_van(hass: HomeAssistant, speaker: str) -> bool | None:
+    """De huidige shuffle-stand van de speaker, of `None` (SPEC 9.6).
 
-    Gooit nooit. Shuffle is een verbetering van de wekker en niet de wekker zelf:
-    lukt de aanroep niet, dan begint hij bij het eerste nummer — hinderlijk, maar
-    geen stille wekker. Daarom wordt de uitkomst niet eens teruggegeven.
+    Dezelfde drie redenen voor `None` als bij `volume_pct_van`: de speaker is er
+    niet, is `unavailable`, of heeft geen `shuffle`-attribuut. Dat laatste hoort bij
+    het tweede — extra state attributes verdwijnen zodra een entiteit `unavailable`
+    is (valkuil 18) — en het is precies waarom `None` "zet niets terug" betekent en
+    niet "hij stond uit". Een verzonnen `False` zou de shuffle van de klant
+    uitzetten omdat wíj hem niet konden lezen.
     """
-    if not shuffle.moet_shuffelen(media_type):
-        return
+    state = hass.states.get(speaker)
+    if state is None or state.state == STATE_UNAVAILABLE:
+        return None
+    stand = state.attributes.get("shuffle")
+    if not isinstance(stand, bool):
+        return None
+    return stand
+
+
+async def async_zet_shuffle(hass: HomeAssistant, speaker: str, aan: bool) -> None:
+    """Zet shuffle aan of uit. Gooit nooit.
+
+    Shuffle is een verbetering van de wekker en niet de wekker zelf: lukt de aanroep
+    niet, dan begint hij bij het eerste nummer — hinderlijk, maar geen stille wekker.
+    Daarom wordt de uitkomst niet eens teruggegeven.
+
+    **`blocking=True` en dat is geen detail.** Met `blocking=False` verpakt HA de
+    aanroep in `_run_service_call_catch_exceptions` en bereikt de fout ons nooit
+    (valkuil 42) — dan lijkt shuffle altijd te lukken en komt niemand er ooit achter
+    dat deze speaker het niet kan. Bovendien moet de aanroep áf zijn vóór
+    `play_media`: MA past shuffle toe bij het laden van de queue (valkuil 51).
+    """
     try:
         await hass.services.async_call(
             "media_player",
             "shuffle_set",
-            {ATTR_ENTITY_ID: speaker, "shuffle": True},
+            {ATTR_ENTITY_ID: speaker, "shuffle": aan},
             blocking=True,
         )
     except Exception as fout:  # noqa: BLE001 - zie docstring
         _LOGGER.warning(
-            "Shuffle aanzetten op %s is mislukt (%s); de wekker begint bij het "
-            "eerste nummer",
+            "Shuffle %s zetten op %s is mislukt (%s)",
+            "aan" if aan else "uit",
             speaker,
             fout,
         )
+
+
+async def async_shuffle_aan_voor(
+    hass: HomeAssistant, speaker: str, media_type: str | None
+) -> bool | None:
+    """Zet shuffle aan als het geluid meerdere nummers heeft, en geef de OUDE stand.
+
+    Geeft `None` terug als er niets is aangezet **of** als de oude stand niet te
+    lezen was. In beide gevallen betekent dat "zet bij het stoppen niets terug", en
+    dat die twee gevallen dezelfde uitkomst delen is met opzet:
+
+    - **niets aangezet** (radio, een los nummer) → dan is er ook niets van ons om
+      terug te zetten, en de shuffle-stand van de klant is de zijne. Zou hier tóch
+      teruggezet worden, dan draaien we een wijziging terug die de klant zélf tijdens
+      de wekker maakte;
+    - **niet te lezen** → SPEC 9.5, en nu ook 9.6: nooit een verzonnen waarde
+      terugzetten.
+
+    De lezing gebeurt **vóór** het zetten, om dezelfde reden als bij het volume: erna
+    lees je je eigen waarde terug.
+    """
+    if not shuffle.moet_shuffelen(media_type):
+        return None
+    stand_voor = shuffle_van(hass, speaker)
+    if stand_voor is None:
+        _LOGGER.debug(
+            "Shuffle van %s is niet te lezen; er wordt bij het stoppen niets teruggezet",
+            speaker,
+        )
+    await async_zet_shuffle(hass, speaker, True)
+    return stand_voor
 
 
 async def _async_start_geluid(
@@ -810,7 +870,8 @@ async def async_stop_afgaan(
        laatste seconde op het oude volume;
     4. volume terugzetten naar wat het vóór de wekker was, of **niets** als dat niet te
        lezen was;
-    5. het `stopped`-event.
+    5. **shuffle** terugzetten, op precies dezelfde voorwaarden (SPEC 9.6);
+    6. het `stopped`-event.
 
     De **wake-up light blijft aan** (SPEC 9.4). De klant zet hem zelf uit. Dat is geen
     vergetelheid: wie om 06:45 gewekt is en om 06:47 op stop drukt, staat anders in het
@@ -851,6 +912,17 @@ async def async_stop_afgaan(
             )
         else:
             await async_zet_volume(hass, speaker, volume_voor)
+
+        # Shuffle op dezelfde voorwaarden als het volume (SPEC 9.6). `None` betekent
+        # óf "wij hebben hem niet aangezet" óf "de oude stand was niet te lezen", en
+        # in beide gevallen is niets doen het juiste — zie `async_shuffle_aan_voor`.
+        shuffle_voor = context.get(CTX_SHUFFLE_VOOR)
+        if shuffle_voor is None:
+            _LOGGER.debug(
+                "Shuffle van %s wordt niet teruggezet voor wekker %s", speaker, alarm_id
+            )
+        else:
+            await async_zet_shuffle(hass, speaker, shuffle_voor)
 
     if reason is not None:
         register.stuur(
