@@ -733,13 +733,212 @@ async def test_search_zonder_music_assistant(
     assert "Music Assistant" in antwoord["error"]["message"]
 
 
+# --- 15.10 alarms/clear_message ----------------------------------------
+
+
+async def _wekker_met_melding(client, store, registry_id) -> tuple[str, dict[str, Any]]:
+    """Sla één wekker op en laat de server er een melding op zetten.
+
+    De melding komt via de store, want dat is ook de enige route in productie:
+    `meldingen.py` schrijft hem, de kaart niet.
+    """
+    antwoord = await _stuur(
+        client,
+        {"type": f"{DOMAIN}/alarms/save", "person": PERSON_ENTITY_ID, "alarm": geldige_wekker()},
+    )
+    assert antwoord["success"], antwoord
+    alarm_id = antwoord["result"]["alarms"][0]["id"]
+    melding = {
+        "at": "2026-08-10T06:45:00.312000+02:00",
+        "kind": "speaker_unavailable",
+        "severity": "error",
+        "text": "De wekker van 06:45 is niet afgegaan: de speaker was niet bereikbaar.",
+    }
+    await store.async_werk_velden_bij(registry_id, alarm_id, {"last_message": melding})
+    return alarm_id, melding
+
+
+async def test_clear_message_wist_de_melding_uit_de_opslag(
+    hass: HomeAssistant, hass_ws_client, omgeving, lees_opslag
+) -> None:
+    """"Begrepen" wist `last_message` in de **opslag** (SPEC 11.7, 15.10).
+
+    NIEUW GEDRAG, met een positieve controle vooraf: eerst staat de melding er, en
+    pas daarna is "hij is weg" iets waard. Zonder die eerste helft slaagt deze test
+    ook op een implementatie die nooit een melding te zien krijgt.
+
+    Dat er in de **opslag** gekeken wordt en niet alleen in het antwoord is de kern:
+    de melding staat daar zodat hij een herstart overleeft en op elk scherm
+    zichtbaar is (SPEC 11.7). Een kaart die hem alleen lokaal verbergt, laat hem
+    staan op het wandtablet.
+    """
+    from custom_components.domotiapp_alarm.const import DATA_STORE
+
+    client = await hass_ws_client(hass)
+    store = hass.data[DOMAIN][DATA_STORE]
+    alarm_id, melding = await _wekker_met_melding(client, store, omgeving)
+
+    # Positieve controle: de melding is er, in het antwoord én op schijf.
+    antwoord = await _stuur(client, {"type": f"{DOMAIN}/alarms/get", "person": PERSON_ENTITY_ID})
+    assert antwoord["result"]["alarms"][0]["last_message"] == melding
+    op_schijf = lees_opslag()["data"]["persons"][omgeving]["alarms"][0]
+    assert op_schijf["last_message"] == melding
+
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/clear_message",
+            "person": PERSON_ENTITY_ID,
+            "alarm_id": alarm_id,
+        },
+    )
+    assert antwoord["success"], antwoord
+    wekker = antwoord["result"]["alarms"][0]
+    assert wekker["last_message"] is None
+    assert lees_opslag()["data"]["persons"][omgeving]["alarms"][0]["last_message"] is None
+
+    # En er is niets anders gesneuveld.
+    assert wekker["name"] == geldige_wekker()["name"]
+    assert wekker["enabled"] is True
+    assert wekker["time"] == geldige_wekker()["time"]
+
+
+async def test_clear_message_laat_de_andere_servervelden_staan(
+    hass: HomeAssistant, hass_ws_client, omgeving
+) -> None:
+    """Wissen raakt alleen `last_message` (SPEC 15.10).
+
+    NIEUW GEDRAG. `skip_next` en `last_fired` dragen respectievelijk de overslag en
+    de inhaalslag (SPEC 13.4). Een commando dat ze en passant meewist, zou een
+    wekker die vanochtend al is afgegaan vanavond opnieuw laten afgaan.
+    """
+    from custom_components.domotiapp_alarm.const import DATA_STORE
+
+    client = await hass_ws_client(hass)
+    store = hass.data[DOMAIN][DATA_STORE]
+    alarm_id, _ = await _wekker_met_melding(client, store, omgeving)
+    gezet = "2026-08-10T06:45:00.312000+02:00"
+    await store.async_werk_velden_bij(
+        omgeving, alarm_id, {"last_fired": gezet, "skip_next": True}
+    )
+
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/clear_message",
+            "person": PERSON_ENTITY_ID,
+            "alarm_id": alarm_id,
+        },
+    )
+    assert antwoord["success"], antwoord
+    wekker = antwoord["result"]["alarms"][0]
+    assert wekker["last_message"] is None
+    assert wekker["last_fired"] == gezet, "last_fired draagt de inhaalslag"
+    assert wekker["skip_next"] is True, "de overslag is een aparte keuze"
+
+
+async def test_clear_message_kan_geen_melding_zetten(
+    hass: HomeAssistant, hass_ws_client, omgeving
+) -> None:
+    """Het commando neemt geen waarde aan (SPEC 15.10, 15.11).
+
+    NIEUW GEDRAG, en dit is de test die het commando afbakent. Zou het een veld
+    accepteren, dan had de kaart via deze weg alsnog een serverveld in handen —
+    precies wat SPEC 15.2 verbiedt — en kon een aanroeper de klant vertellen dat
+    zijn wekker niet is afgegaan terwijl hij wel afging.
+
+    Er is een positieve controle bij: dezelfde aanroep **zonder** het extra veld
+    slaagt. Zonder die helft zou deze test ook slagen op een commando dat helemaal
+    niet bestaat.
+    """
+    from custom_components.domotiapp_alarm.const import DATA_STORE
+
+    client = await hass_ws_client(hass)
+    store = hass.data[DOMAIN][DATA_STORE]
+    alarm_id, melding = await _wekker_met_melding(client, store, omgeving)
+
+    for extra in (
+        {"last_message": {**melding, "text": "verzonnen"}},
+        {"message": {**melding, "text": "verzonnen"}},
+        {"severity": "notice"},
+    ):
+        antwoord = await _stuur(
+            client,
+            {
+                "type": f"{DOMAIN}/alarms/clear_message",
+                "person": PERSON_ENTITY_ID,
+                "alarm_id": alarm_id,
+                **extra,
+            },
+        )
+        assert not antwoord["success"], (extra, antwoord)
+        assert antwoord["error"]["code"] == "invalid_format", (extra, antwoord)
+
+    # De melding staat er dus nog steeds — en is niet vervangen door "verzonnen".
+    antwoord = await _stuur(client, {"type": f"{DOMAIN}/alarms/get", "person": PERSON_ENTITY_ID})
+    assert antwoord["result"]["alarms"][0]["last_message"] == melding
+
+    # Positieve controle: zonder extra veld lukt het wel.
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/clear_message",
+            "person": PERSON_ENTITY_ID,
+            "alarm_id": alarm_id,
+        },
+    )
+    assert antwoord["success"], antwoord
+    assert antwoord["result"]["alarms"][0]["last_message"] is None
+
+
+async def test_clear_message_is_idempotent_en_kent_zijn_wekker(
+    hass: HomeAssistant, hass_ws_client, omgeving
+) -> None:
+    """Twee keer wissen is geen fout; een onbekende wekker wel (SPEC 15.10).
+
+    NIEUW GEDRAG. Twee schermen kunnen tegelijk op "Begrepen" drukken, net als bij
+    `alarms/stop`. Maar een `alarm_id` die niet bestaat is wél `not_found`: stil
+    slagen op een wekker die er niet is, verbergt een kaart die met verouderde
+    ID's werkt.
+    """
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(
+        client,
+        {"type": f"{DOMAIN}/alarms/save", "person": PERSON_ENTITY_ID, "alarm": geldige_wekker()},
+    )
+    alarm_id = antwoord["result"]["alarms"][0]["id"]
+
+    for _ in range(2):
+        antwoord = await _stuur(
+            client,
+            {
+                "type": f"{DOMAIN}/alarms/clear_message",
+                "person": PERSON_ENTITY_ID,
+                "alarm_id": alarm_id,
+            },
+        )
+        assert antwoord["success"], antwoord
+        assert antwoord["result"]["alarms"][0]["last_message"] is None
+
+    antwoord = await _stuur(
+        client,
+        {
+            "type": f"{DOMAIN}/alarms/clear_message",
+            "person": PERSON_ENTITY_ID,
+            "alarm_id": "bestaat-niet",
+        },
+    )
+    assert not antwoord["success"]
+    assert antwoord["error"]["code"] == "not_found"
+
+
 # --- SPEC 17: rechten --------------------------------------------------
 
 
-async def test_niet_admin_mag_alle_negen_commandos(
+async def test_niet_admin_mag_alle_tien_commandos(
     hass: HomeAssistant, hass_ws_client, hass_read_only_access_token, omgeving
 ) -> None:
-    """Een niet-admin mag alle negen commando's aanroepen (SPEC 17).
+    """Een niet-admin mag alle tien commando's aanroepen (SPEC 17).
 
     NIEUW GEDRAG. Verplicht geval 6, en de belangrijkste rechtentest van dit
     product: klanten draaien Fully Kiosk met een niet-admin account. Zou er ergens
@@ -774,6 +973,11 @@ async def test_niet_admin_mag_alle_negen_commandos(
         {"type": f"{DOMAIN}/alarms/stop", "person": PERSON_ENTITY_ID, "alarm_id": alarm_id},
         {"type": f"{DOMAIN}/ringing/subscribe"},
         {"type": f"{DOMAIN}/sound/search", "query": "jazz"},
+        {
+            "type": f"{DOMAIN}/alarms/clear_message",
+            "person": PERSON_ENTITY_ID,
+            "alarm_id": alarm_id,
+        },
         {"type": f"{DOMAIN}/alarms/delete", "person": PERSON_ENTITY_ID, "alarm_id": alarm_id},
     ]
     for payload in aanroepen:

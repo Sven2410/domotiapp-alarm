@@ -1150,6 +1150,13 @@ niet.
 **a) Op de kaart.** De rij van de betreffende wekker krijgt de melding, met een
 **"Begrepen"**-knop die hem wegneemt. De kaart is waar de klant 's ochtends kijkt.
 
+Die knop roept
+[`alarms/clear_message`](#1510-domotiapp_alarmalarmsclear_message) aan en wist het
+veld in de **opslag**. Lokaal verbergen is niet genoeg en dat volgt uit deze
+sectie zelf: de melding staat in de opslag zodat hij een herstart overleeft en op
+elk scherm zichtbaar is, dus wegklikken moet op dezelfde plek gebeuren. Anders
+blijft hij staan op het wandtablet en komt hij terug na een herlaadbeurt.
+
 Teksten bij `severity: "error"`:
 
 | `kind` | Tekst op de kaart |
@@ -1838,11 +1845,68 @@ entiteiten. Een abonnement houdt de toestand binnen de kaart, waar hij hoort.
 De prijs staat er ook bij: de afgaan-toestand is daarmee **niet** beschikbaar voor
 automatiseringen van de klant. Dat is aanvaard.
 
-### 15.10 Wat er bewust géén commando is
+### 15.10 `domotiapp_alarm/alarms/clear_message`
+
+De **"Begrepen"**-knop uit
+[11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt). Wist
+`last_message` van één wekker.
+
+**Invoer**
+
+| Veld | Type | Verplicht |
+|---|---|---|
+| `type` | `"domotiapp_alarm/alarms/clear_message"` | ja |
+| `person` | string, `person.`-entity-ID | ja |
+| `alarm_id` | string | ja |
+
+**Uitvoer:** als [`alarms/get`](#151-domotiapp_alarmalarmsget).
+
+**Fouten**
+
+| Code | Wanneer |
+|---|---|
+| `invalid_format` | een veld ontbreekt of heeft het verkeerde type |
+| `not_found` | de persoon bestaat niet, of de wekker bestaat niet bij deze persoon |
+| `home_assistant_error` | opslag onleesbaar, of wegschrijven mislukt |
+
+**Rechten:** iedere ingelogde gebruiker, net als alle andere commando's
+([sectie 17](#17-rechten)). Wie zijn wekker mag stoppen, mag de melding daarover
+wegklikken.
+
+**Waarom dit commando bestaat.** `last_message` staat **in de opslag** en niet in
+de kaart, met opzet: een melding moet een herstart overleven en zichtbaar zijn als
+de browser pas uren later opengaat
+([11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt),
+[14.2](#142-het-schema)). Precies daardoor kán de kaart hem niet zelf wegnemen.
+Zonder dit commando is de "Begrepen"-knop **een knop die liegt**: hij verbergt de
+melding in één browser, laat hem staan op het wandtablet, en zet hem terug bij de
+eerstvolgende herlaadbeurt.
+
+**Dit is geen omweg naar de servervelden.** [15.2](#152-domotiapp_alarmalarmssave)
+legt vast dat `skip_next`, `one_shot_at`, `last_fired` en `last_message` **nooit
+met een waarde van de kaart komen**, omdat een kaart die ze mag zetten de
+inhaalslag uit [13.4](#134-het-respijtvenster-30-minuten) om de tuin kan leiden.
+Die regel blijft onaangetast, en de vorm van dit commando is de reden:
+
+- het neemt **geen waarde** aan — er is geen veld voor een `text`, een `kind`, een
+  `severity` of een `at`;
+- het zet `last_message` **onvoorwaardelijk** op `null`. Er is precies één
+  uitkomst, en die is niet door de aanroeper te sturen;
+- het raakt de andere drie servervelden **niet** aan.
+
+De kaart kan met dit commando dus maar één ding: wegnemen wat de server zelf heeft
+geschreven. Een tweede commando dat een melding zou kúnnen zetten is er bewust
+niet — zie [15.11](#1511-wat-er-bewust-géén-commando-is).
+
+**Idempotent:** een melding wissen die er niet is, is geen fout en geeft gewoon de
+huidige toestand terug. Twee schermen kunnen tegelijk op "Begrepen" drukken.
+
+### 15.11 Wat er bewust géén commando is
 
 | Niet | Waarom |
 |---|---|
 | Een wekker aanmaken zonder speaker of geluid | Ze zijn verplicht; een half opgeslagen wekker is een wekker die stil faalt |
+| Een melding **zetten** of wijzigen | [15.10](#1510-domotiapp_alarmalarmsclear_message) wist alleen. Meldingen komen uit de integratie zelf ([11.7](#117-waar-de-melding-verschijnt-en-hoe-de-klant-hem-wegkrijgt)); een aanroeper die er een kan schrijven, kan de klant vertellen dat zijn wekker is afgegaan terwijl dat niet zo is |
 | De wekkerlijst van álle personen ophalen | De kaart is per persoon; een overzichtscommando zou de scheiding uit [sectie 6](#6-de-person-entiteit-als-opslagsleutel) tot niets maken zonder er functionaliteit voor terug te geven |
 | Opslag verwijderen per persoon | v1 heeft geen opruimoverzicht; zie [sectie 18.1](#181-de-person-entiteit-wordt-hernoemd-of-verwijderd) en [sectie 20](#20-wat-niet-in-v1-zit) |
 | Het volume van een speaker rechtstreeks zetten | Dat is `media_player.volume_set` en dat bestaat al |
@@ -1900,6 +1964,7 @@ persoon daarna kiest.
 | Kaart zien, wekkerlijst lezen | iedere ingelogde gebruiker |
 | Wekker aanmaken, wijzigen, verwijderen, aan/uit, overslaan | **iedere ingelogde gebruiker** |
 | Wekker stoppen | **iedere ingelogde gebruiker** |
+| Een melding wegklikken ("Begrepen") | **iedere ingelogde gebruiker** |
 | Geluid zoeken, voorbeeld spelen | iedere ingelogde gebruiker |
 | `entities/list`, `ringing/subscribe` | iedere ingelogde gebruiker |
 | Labels aanmaken en op entiteiten zetten | admin (dat regelt HA zelf) |
