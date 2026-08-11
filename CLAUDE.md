@@ -716,6 +716,42 @@ Vindplaatsen in `docs/fase-7/RAPPORT.md`.
     navigeren. Verifieer daarna met een **cache-lezing** (`cache.match`, nooit een
     `fetch`, valkuil 4) tegen de hash op schijf.
 
+
+### Nieuw in fase 8
+
+Vindplaatsen in `docs/fase-8/RAPPORT.md`.
+
+63. **`scrollWidth > clientWidth` vindt maar de helft van het afsnijden.** De
+    methode uit fase 4c meet overloop naar **rechts**. Een flexrij met
+    `justify-content: flex-end` spilt naar **links**, en dan meldt de rij netjes
+    `clientWidth 244, scrollWidth 244` terwijl er een knop 67 px buiten de kaart
+    ligt. En een veld dat wordt **platgeknepen** in plaats van afgesneden (een leeg
+    zoekveld van 27 px) heeft niets om over te lopen, dus daar meet hij ook niets.
+    **Wat wél werkt:** vergelijk per element de `getBoundingClientRect` met die van
+    de kaart, aan **beide** kanten, en loop álle elementen af in plaats van de twee
+    die gemeld zijn. In fase 8 leverde dat een derde probleem op dat niemand had
+    genoemd.
+
+64. **`container-type` doet niets op een inline element — en dat faalt stil.**
+    Gemeten: HA geeft de kaarthost `display: inline`. `container-type: inline-size`
+    heeft daar geen effect, de host wordt geen query-container, en elke
+    `@container`-regel eronder komt nooit aan bod. Geen fout, geen waarschuwing,
+    alleen opmaak die niet verandert. `display: block` erbij is dus een voorwaarde
+    en geen smaak.
+    En: **geef de container een naam.** Een naamloze `@container` pakt de
+    dichtstbijzijnde container-voorouder, en dat kan er een van HA zelf zijn — dan
+    hangt onze opmaak af van de afmeting van iets waar wij niet over gaan.
+    Container queries zijn hier het juiste gereedschap en een media query het
+    verkeerde: in een bubble pop-up is de **kaart** smal terwijl het **venster**
+    breed is.
+
+65. **Een kaart in een bubble card is smaller dan elke conditie die je tot nu toe
+    meet.** `/fase-4a/smal` staat op 373 px (telefoonbreedte); een bubble pop-up zit
+    daar onder. Er is nu een view `/fase-4a/bubble` met `grid_options: {columns: 6}`
+    → **244 px**. Dat is strenger dan de werkelijkheid en dat is met opzet: wat daar
+    past, past overal. Let op dat het **niet** dezelfde component is — een echte
+    bubble card brengt eigen CSS mee.
+
 ```bash
 npm install                # eenmalig
 npm run build              # bundelt src/ -> custom_components/.../frontend/
@@ -822,7 +858,8 @@ en die draait alleen bij opname in de standaardwinkel. Zie
 | 5 | HACS-klaar: `manifest.json` en `hacs.json` geverifieerd tegen hassfest én HACS' eigen schema's (beide echt gedraaid, met negatieve controle), README herschreven voor de klant, en de installatie bewezen op een verse HA op 8130 waar de integratie als **kopie** in staat zoals HACS hem levert. Geen functionele wijziging | gemerged, 1.0.0 |
 | 6 | Drie bevindingen uit productie op 1.0.0. (1) Shuffle staat nu altijd aan bij afspeellijst, album en artiest — `media_player.shuffle_set` vóór `play_media`, want MA schudt bij het laden van de queue (SPEC 9.6, nieuw). (2) De melding `sound_gone` zei "bestaat niet meer" terwijl het geluid bestond; hij zegt nu "kon niet gestart worden" mét de reden van MA (SPEC 11.7 herschreven — buiten de gestelde grens, gemeld). (3) Een afgelopen eenmalige wekker zette zichzelf nooit uit terwijl SPEC 14.5 dat sinds fase 2 eist; dat is nu op alle drie de routes gerepareerd, en opnieuw aanzetten geeft een nieuwe `one_shot_at` (SPEC 15.3). 297 Python-tests, 22 mutaties in twee rondes (3 gaten gedicht). Audit van SPEC 11.7: nog twee teksten claimen te veel | gemerged |
 | 6b | Vier bevindingen. (1) Het overloopmenu bleef onder de kaart hangen — HA heeft géén bruikbare menu-component (gemeten), dus een eigen `position: fixed` menu dat omhoog klapt en binnen de kaart blijft; gemeten op 373 px: was 71 px buiten de kaart, is nu 57 px erbinnen. (2) De kopbalk met de eerstvolgende wektijd en de plusknop staat nu **boven** de lijst; de lege staat ís die kopbalk (SPEC 3.1–3.3). (3) De laatste twee liegende teksten herschreven, mét het patroon erachter (SPEC 11.7). (4) Shuffle gaat na de wekker terug naar wat het was, met de drie regels van SPEC 9.5; live `false → true → false`. 308 Python- en 91 JS-tests, 23 mutaties in twee rondes (2 gaten gedicht) | gemerged, 1.0.1 |
-| **7** | **De prullenbak, en overslaan eruit. De bevinding eerst uitgezocht: het menu opende maar half, en de oorzaak was een `position: fixed; inset: 0`-laag die sinds fase 4a élke klik op de kaart opving (valkuil 60). Het menu is vervangen door één prullenbakknop per rij met een bevestiging die naam en tijd noemt — geen `ha-dialog`, want die is in 2026.8 van mwc naar Web Awesome gegaan en zijn knoppen kwamen als 0 x 0 uit de verf (gemeten). `skip_next` is volledig verwijderd, met een migratie van schemaversie **1 naar 2**; live bewezen op een echte oude `.storage`: 4 wekkers, 0 onleesbaar. 314 Python- en 85 JS-tests, 15 mutaties in twee rondes (2 gaten gedicht, 1 mutatie was zelf fout)** | **deze ronde, PR #15** |
+| 7 | De prullenbak, en overslaan eruit. De bevinding eerst uitgezocht: het menu opende maar half, en de oorzaak was een `position: fixed; inset: 0`-laag die sinds fase 4a élke klik op de kaart opving (valkuil 60). Het menu is vervangen door één prullenbakknop per rij met een bevestiging die naam en tijd noemt — geen `ha-dialog`, want die is in 2026.8 van mwc naar Web Awesome gegaan en zijn knoppen kwamen als 0 x 0 uit de verf (gemeten). `skip_next` is volledig verwijderd, met een migratie van schemaversie 1 naar 2; live bewezen op een echte oude `.storage`: 4 wekkers, 0 onleesbaar. 314 Python- en 85 JS-tests, 15 mutaties in twee rondes (2 gaten gedicht, 1 mutatie was zelf fout) | gemerged |
+| **8** | **Twee bevindingen uit een bubble card op de telefoon. (1) Afsnijden: de knoppenrij liep 67 px buiten de kaart en het zoekveld werd tot 27 px platgeknepen — `scrollWidth` vond geen van beide (valkuil 63). Voetregel en zoekrij wikkelen nu, en kaart én editor passen zich met een **benoemde** container query aan hun eigen breedte aan (valkuil 64). Gemeten bij 244 px: 0 van de 57 elementen valt nog buiten de kaart. (2) Het voorbeeld zet nu ook de wake-up light aan en zet hem bij het stoppen terug, met dezelfde drie regels als het volume (SPEC 5.4 en 12). Live: `uit → 100 % → uit` en `128 → 255 → 128`. 327 Python- en 85 JS-tests, 14 mutaties in twee rondes (2 gaten gedicht, 1 regel geschrapt als onbereikbaar)** | **deze ronde, PR #16** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -1067,6 +1104,23 @@ En één ding om te weten vóór de volgende meting: **de `?v=` verslaat HA's se
 worker niet** (valkuil 62). Ruim de cache en de service worker op, en vergelijk met
 een `cache.match` tegen de hash op schijf.
 
+**Wat er staat na fase 8:** de kaart en de editor passen in een bubble card. De
+voetregel en de zoekrij wikkelen, en beide surfaces meten zich aan hun **eigen**
+breedte in plaats van aan het venster. En het voorbeeld laat zien wat er
+'s ochtends gebeurt: geluid, volume, shuffle **en** de wake-up light — met de lamp
+terug op zijn oude stand zodra je stopt.
+
+**De twee regels van fase 8 die je niet mag omdraaien** (zie
+`docs/fase-8/RAPPORT.md`):
+
+1. **Meet afsnijden aan beide kanten, over álle elementen.** `scrollWidth` meet
+   alleen naar rechts en ziet een platgeknepen veld helemaal niet (valkuil 63).
+2. **Wat wij aanzetten, zetten wij terug — en niets anders.** Volume, shuffle en nu
+   ook de lamp volgen dezelfde drie regels: lezen vóór zetten, niets terugzetten
+   wat niet te lezen was, en niets terugzetten wat we niet hebben aangezet. Bij de
+   lamp komt daar één uitzondering bij die in SPEC staat: een **wekker** laat hem
+   aan, een **voorbeeld** zet hem terug.
+
 ### Waar de volgende fase begint
 
 `SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **tien** commando's die de
@@ -1098,12 +1152,15 @@ die soms onwaar was, en dat is het soort dat mensen leren negeren. Eén veld in 
 bestaand commando is bijna altijd goedkoper dan een tweede implementatie in de
 kaart.
 
-**Drie dashboards om in te meten staan klaar:** `/fase-4a/0` (sections-weergave, de
+**Vier dashboards om in te meten staan klaar:** `/fase-4a/0` (sections-weergave, de
 kaart op `person.dev`), `/fase-4a/spec163` met de drie gevallen van SPEC 16.3 naast
 elkaar, en `/fase-4a/smal` — dezelfde kaart op `grid_options: {columns: 9}`, wat
 **373 px** oplevert. Dat is telefoonbreedte (Galaxy S8 360, iPhone SE 375, Pixel 7
 412) en het is de manier om afkappende teksten te meten zonder het browservenster te
-verkleinen, wat op een gemaximaliseerd venster niet lukt (fase 4c).
+verkleinen, wat op een gemaximaliseerd venster niet lukt (fase 4c). En sinds fase 8
+`/fase-4a/bubble` — `grid_options: {columns: 6}`, wat **244 px** oplevert. Dat is
+smaller dan een echte bubble pop-up en dus strenger dan de werkelijkheid
+(valkuil 65).
 
 **En let op de testrig**: tel de snapclients vóór je een audiometing gelooft
 (valkuil 47). Er hoort er **één per hostID** te draaien.
@@ -1138,6 +1195,7 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | ~~De tekst bij `sound_gone` claimt te veel~~ **OPGELOST in fase 6**: hij zegt nu "kon niet gestart worden" met de reden van MA erbij | SPEC 11.7 | gedaan |
 | ~~`volume_ramp_unavailable` en `skipped_grace_window` claimen te veel~~ **OPGELOST in fase 6b**, met de voorstellen die de eigenaar heeft goedgekeurd. Het patroon erachter staat nu in valkuil 53 | SPEC 11.7 | gedaan |
 | ~~Shuffle wordt na de wekker niet teruggezet~~ **OPGELOST in fase 6b**: hij gaat terug met dezelfde drie regels als het volume (SPEC 9.6) | `afvuren.py` / SPEC 9.5, 9.6 | gedaan |
+| **Het tijdveld in de editor is niet op een telefoon getoetst.** De eigenaar meldde dat de tijd tegen de rand loopt; bij 244 px houdt "05:20" nog 130 px over binnen zijn veld, dus het is hier niet te reproduceren. De wijziging van fase 8 (meer padding, kleinere cijfers onder 300 px) is voorzorg. De native tijdweergave is precies wat een telefoon anders tekent | de editor | **eigenaar toetst dit op zijn telefoon** |
 | **De verwijderbevestiging heeft geen focusval en geen Escape.** Het zijn twee gewone knoppen in een rij, dus Tab en Enter werken; wat ontbreekt is wat een echte dialoog zou meebrengen. `ha-dialog` bestaat wél op een dashboard, maar zijn sloten zijn in 2026.8 van mwc naar Web Awesome gegaan (`headerTitle`, `footer` in plaats van `primaryAction`/`secondaryAction`) en met de oude namen komen de knoppen als 0 x 0 uit de verf — gemeten in fase 7. Wie dit alsnog wil: gebruik `footer`, en weet dat de kaart zich dan aan de binnenkant van een net verbouwde HA-component bindt | de kaart | bij gelegenheid |
 | **De waarschuwing bij een eindig geluid blijft weg bij een BESTAANDE wekker.** `endless` komt uit `sound/search` en staat niet in de opslag — het is een eigenschap van de provider, niet van de keuze (SPEC 15.6). Wie hem ook wil zien bij het openen van een oude wekker, moet `endless` in de opslag zetten of `alarms/get` het laten meesturen. Aanvaard in fase 4c | SPEC 8.2 / 15.1 | **eigenaar**, als hij het mist |
 | **De provider-as van `endless` is niet live aangetoond**, alleen de soort-as: er is geen streamingprovider op deze instance (fase 0b). Unittests dekken het paar `spotify`/`somafm` op dezelfde soort | `radiomodus.py` | de eigenaar toetst het op zijn eigen HA |

@@ -18,12 +18,16 @@ uit `aanroepen` afgelezen.
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
 import pytest
 
 from homeassistant.components.media_player import MediaPlayerEntityFeature
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 
 from custom_components.domotiapp_alarm import abonnement, voorbeeld
 from custom_components.domotiapp_alarm.const import DOMAIN, VOORBEELD_MAX_MINUTEN
@@ -31,6 +35,7 @@ from custom_components.domotiapp_alarm.const import DOMAIN, VOORBEELD_MAX_MINUTE
 from .conftest import (
     PERSON_ENTITY_ID,
     Speelhuis,
+    maak_lamp,
     maak_speaker,
     registreer_person,
     zet_integratie_op,
@@ -74,10 +79,15 @@ async def huis(hass: HomeAssistant, hass_storage: dict[str, Any]) -> Speelhuis:
     """
     registreer_person(hass)
     maak_speaker(hass, features=GOEDE_FEATURES)
+    lamp = maak_lamp(hass)
     speelhuis = Speelhuis(hass)
     speelhuis.register()
     speelhuis.zet_volume_op(55)
     await zet_integratie_op(hass)
+    # De lamp moet gelabeld zijn, anders weigert `preview/start` hem op SPEC 12 —
+    # dezelfde controle als `alarms/save` doet.
+    label = lr.async_get(hass).async_create("Verlichting Wekker")
+    er.async_get(hass).async_update_entity(lamp, labels={label.label_id})
     return speelhuis
 
 
@@ -424,3 +434,332 @@ async def test_niet_admin_mag_een_voorbeeld_spelen(
     client = await hass_ws_client(hass, hass_read_only_access_token)
     antwoord = await _stuur(client, _start())
     assert antwoord["success"], antwoord
+
+
+# --- de wake-up light in het voorbeeld (SPEC 5.4 en 12, fase 8) ---------
+
+LAMP = {"entity_id": "light.bedlamp", "brightness_pct": 80}
+
+
+def _lampstand(huis: Speelhuis) -> list[dict[str, Any]]:
+    """Alle lamp-aanroepen, in volgorde, met alleen wat er toe doet."""
+    return [
+        {"dienst": naam.split(".")[1], **{s: w for s, w in data.items() if s != "entity_id"}}
+        for naam, data in huis.aanroepen
+        if naam.startswith("light.")
+    ]
+
+
+async def test_het_voorbeeld_zet_de_lamp_aan_op_de_ingestelde_helderheid(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG. Bevinding 2 van fase 8, verplicht geval 1.
+
+    Wie 100 % helderheid instelt wil zien of dat niet te fel is, net zoals hij het
+    volume wil horen. Een voorbeeld dat de helft van de wekker weglaat, is geen
+    voorbeeld.
+
+    De assertie staat op de **helderheid** en niet alleen op "er is een lamp
+    aangeraakt": een implementatie die `light.turn_on` zonder `brightness_pct`
+    stuurt, laat de lamp op zijn vorige stand staan en toont dus juist niet wat de
+    klant wilde beoordelen.
+    """
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40, light=LAMP))
+    assert antwoord["success"], antwoord
+
+    assert _lampstand(huis) == [{"dienst": "turn_on", "brightness_pct": 80}]
+
+
+async def test_de_lamp_gaat_na_het_geluid_aan(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG, en het is een keuze die uitgelegd hoort te worden.
+
+    Bij een wekker gaat de lamp **vóór** het geluid (SPEC 9.1 stap 4), omdat
+    `play_media` daar 2,1-2,6 s blokkeert en de lamp niet mag wachten op iets dat
+    kan mislukken. Bij een voorbeeld ligt het andersom: mislukt het afspelen, dan
+    wordt het voorbeeld geweigerd, en dan hoort er geen lamp te hebben geflitst die
+    we meteen weer uitzetten.
+
+    Zie `test_een_mislukt_voorbeeld_laat_de_lamp_met_rust` voor de andere helft.
+    """
+    client = await hass_ws_client(hass)
+    await _stuur(client, _start(volume_pct=40, light=LAMP))
+
+    namen = huis.namen()
+    assert namen.index("music_assistant.play_media") < namen.index("light.turn_on"), namen
+
+
+async def test_stoppen_zet_de_lamp_terug_zoals_hij_stond(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG. Verplicht geval 2.
+
+    Dit is het verschil met een echte wekker, en het is bewust: SPEC 12 laat de
+    lamp na een wekker **aan** staan, want dan word je wakker. Bij een voorbeeld
+    wil je je kamer niet op vol licht achterlaten omdat je even iets uitprobeerde —
+    dezelfde redenering als het volume in SPEC 9.5.
+
+    De lamp stond **uit**, dus hij hoort uit te gaan. Niet "aan op 1 %", niet "aan
+    op de vorige helderheid van een andere lamp": uit.
+    """
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40, light=LAMP))
+    abonnement_id = antwoord["id"]
+
+    await _stuur(client, {"type": "unsubscribe_events", "subscription": abonnement_id})
+    await hass.async_block_till_done()
+
+    assert _lampstand(huis) == [
+        {"dienst": "turn_on", "brightness_pct": 80},
+        {"dienst": "turn_off"},
+    ]
+
+
+async def test_een_lamp_die_aan_stond_gaat_terug_naar_zijn_helderheid(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG, en de positieve controle bij de test hierboven.
+
+    Een implementatie die bij het stoppen altijd `turn_off` doet, komt door die
+    test heen en zet hier het licht uit dat de klant zelf aan had staan. Dat is
+    precies de bijwerking die we wilden wegnemen, alleen dan andersom.
+
+    `brightness` is de 0-255-schaal van Home Assistant; die gaat er letterlijk weer
+    in. Omrekenen naar procenten en terug zou afronden, en dan komt de lamp niet
+    terug op de stand die hij had.
+    """
+    hass.states.async_set("light.bedlamp", "on", {"friendly_name": "Bedlamp", "brightness": 120})
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40, light=LAMP))
+
+    await _stuur(client, {"type": "unsubscribe_events", "subscription": antwoord["id"]})
+    await hass.async_block_till_done()
+
+    assert _lampstand(huis) == [
+        {"dienst": "turn_on", "brightness_pct": 80},
+        {"dienst": "turn_on", "brightness": 120},
+    ]
+
+
+async def test_een_onleesbare_lampstand_wordt_niet_teruggezet(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis, caplog
+) -> None:
+    """NIEUW GEDRAG. Verplicht geval 2, tweede helft: nooit een verzonnen waarde.
+
+    Een lamp die `unavailable` is heeft geen leesbare stand — en valkuil 18 zegt
+    waarom dat juist op dit moment gebeurt: extra state attributes verdwijnen zodra
+    een entiteit wegvalt. `turn_off` sturen zou een keuze maken die we niet kennen.
+
+    Het **aanzetten** gaat wel gewoon door: dat is wat de klant vroeg, en of het
+    lukt merkt hij vanzelf.
+    """
+    hass.states.async_set("light.bedlamp", "unavailable", {"friendly_name": "Bedlamp"})
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40, light=LAMP))
+
+    with caplog.at_level(logging.WARNING, logger="custom_components.domotiapp_alarm.voorbeeld"):
+        await _stuur(client, {"type": "unsubscribe_events", "subscription": antwoord["id"]})
+        await hass.async_block_till_done()
+
+    assert _lampstand(huis) == [{"dienst": "turn_on", "brightness_pct": 80}]
+    # En er staat geen WAARSCHUWING over een mislukt terugzetten. "Ik weet zijn oude
+    # stand niet" is geen fout maar de normale uitkomst bij een weggevallen lamp;
+    # een waarschuwing zou beweren dat er iets misging (SPEC 11.7's regel, hier in
+    # een logregel). Gevonden in de mutatieproef van fase 8 (M4): zonder deze
+    # assertie loopt het terugzetten via een exceptie en merkt geen test dat.
+    assert "terugzetten is mislukt" not in caplog.text, caplog.text
+
+
+async def test_een_voorbeeld_zonder_lamp_raakt_geen_enkele_lamp_aan(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """REGRESSIEWACHT. Verplicht geval 3.
+
+    Hij slaagt op de code van vóór fase 8, en dat is narekenbaar: daar deed het
+    voorbeeld sowieso niets met een lamp. Zijn waarde ligt aan de andere kant —
+    tegen een implementatie die een lamp verzint, of die de lamp van de vorige
+    wekker uit de opslag pakt. De klant heeft er geen gekozen, dus er hoort er geen
+    aan te gaan.
+    """
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40))
+    assert antwoord["success"], antwoord
+
+    await _stuur(client, {"type": "unsubscribe_events", "subscription": antwoord["id"]})
+    await hass.async_block_till_done()
+
+    assert _lampstand(huis) == []
+
+
+async def test_een_falende_lamp_laat_het_geluid_gewoon_spelen(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG. Verplicht geval 4, en het is SPEC 12 in het klein.
+
+    Het geluid is het voorbeeld, net zoals het geluid de wekker is. Een lamp die
+    weigert mag het voorbeeld niet afbreken — dan zou een kapotte lamp de klant
+    beletten zijn geluid te beoordelen.
+
+    De eerste assertie vermijdt "de setup faalt niet": zonder die regel slaagt deze
+    test ook op een implementatie die de lamp helemaal niet aanraakt.
+    """
+    huis.faal.add("light.turn_on")
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40, light=LAMP))
+
+    assert antwoord["success"], antwoord
+    assert "light.turn_on" in huis.namen(), "er is niets misgegaan om op te toetsen"
+    assert "music_assistant.play_media" in huis.namen()
+    assert voorbeeld.loopt_op(hass, "media_player.slaapkamer")
+
+
+async def test_een_mislukt_voorbeeld_laat_de_lamp_met_rust(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """REGRESSIEWACHT — hij slaagt op de code van vóór fase 8, en dat is
+    narekenbaar: daar wordt sowieso geen lamp aangeraakt. Zijn waarde ligt aan de
+    andere kant, tegen een implementatie die de lamp vóór het geluid zet en hem
+    daarna vergeet terug te draaien.
+
+    De keerzijde van "de lamp gaat ná het geluid aan".
+
+    Faalt `play_media`, dan wordt het voorbeeld geweigerd en is er niets gebeurd
+    dat teruggedraaid moet worden. Er hoort dan ook geen lamp te hebben geflitst.
+    """
+    huis.faal.add("music_assistant.play_media")
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40, light=LAMP))
+
+    assert not antwoord["success"]
+    assert _lampstand(huis) == []
+
+
+async def test_een_weggevallen_verbinding_zet_de_lamp_ook_terug(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG. Verplicht geval 5, en het geval dat de kaart niet kan afvangen.
+
+    Een tabblad dat wordt weggeklikt, een browser die crasht, een wandtablet dat
+    zijn wifi verliest: SPEC 5.4 eist dat élke manier van sluiten het voorbeeld
+    stopt, en fase 4b heeft dat opgelost door het voorbeeld een **abonnement** te
+    maken. De lamp hangt aan diezelfde opruiming, en deze test bewijst dat door de
+    verbinding echt te laten wegvallen in plaats van netjes af te melden.
+    """
+    client = await hass_ws_client(hass)
+    await _stuur(client, _start(volume_pct=40, light=LAMP))
+    assert voorbeeld.loopt_op(hass, "media_player.slaapkamer")
+
+    await client.close()
+    await hass.async_block_till_done()
+
+    assert _lampstand(huis) == [
+        {"dienst": "turn_on", "brightness_pct": 80},
+        {"dienst": "turn_off"},
+    ]
+    assert not voorbeeld.loopt_op(hass, "media_player.slaapkamer")
+
+
+async def test_het_maximum_zet_de_lamp_ook_terug(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG. Verplicht geval 5, langs de derde route.
+
+    Er zijn drie manieren waarop een voorbeeld eindigt: afmelden, een tweede
+    voorbeeld op dezelfde speaker, en de maximumtimer. Alle drie lopen door
+    `async_stop`, en dat is precies waarom het terugzetten daar staat en niet in de
+    afmeldcallback.
+    """
+    import datetime as dt
+
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    client = await hass_ws_client(hass)
+    await _stuur(client, _start(volume_pct=40, light=LAMP))
+
+    async_fire_time_changed(
+        hass, dt_util.utcnow() + dt.timedelta(minutes=VOORBEELD_MAX_MINUTEN, seconds=5)
+    )
+    await hass.async_block_till_done()
+
+    assert _lampstand(huis)[-1] == {"dienst": "turn_off"}
+    assert not voorbeeld.loopt_op(hass, "media_player.slaapkamer")
+
+
+async def test_een_lamp_zonder_label_wordt_geweigerd(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG. Dezelfde keuring als `alarms/save` (SPEC 12).
+
+    De editor stuurt hier een keuze heen die nog niet is opgeslagen en dus nog niet
+    gekeurd is. Zonder deze controle kan iemand langs de API elke lamp in huis laten
+    aanfloepen — en dan is het voorbeeld een afstandsbediening voor het hele huis
+    in plaats van voor de wekker.
+    """
+    maak_lamp(hass, "light.woonkamer", "Woonkamer")
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(
+        client,
+        _start(volume_pct=40, light={"entity_id": "light.woonkamer", "brightness_pct": 80}),
+    )
+
+    assert not antwoord["success"]
+    assert antwoord["error"]["code"] == "not_allowed"
+    assert _lampstand(huis) == []
+
+
+async def test_een_helderheid_buiten_bereik_wordt_geweigerd(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG. `invalid_format`, en niet stil doorgeven aan `light.turn_on`.
+
+    Hetzelfde als bij `alarms/save` (SPEC 15.2): de vorm wordt server-side gekeurd,
+    door **dezelfde** functie, zodat het voorbeeld en het opslaan niet uiteen kunnen
+    lopen over wat een geldige lamp is.
+    """
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(
+        client,
+        _start(volume_pct=40, light={"entity_id": "light.bedlamp", "brightness_pct": 250}),
+    )
+
+    assert not antwoord["success"]
+    assert antwoord["error"]["code"] == "invalid_format"
+    # En de fout gaat over de **helderheid**, niet over "onbekend veld". Zonder deze
+    # regel slaagt de test ook op de code van vóór fase 8, waar `light` gewoon een
+    # onbekende sleutel was — een andere fout om een andere reden.
+    assert "brightness_pct" in antwoord["error"]["message"], antwoord["error"]
+    assert _lampstand(huis) == []
+
+
+async def test_een_helderheid_die_geen_getal_is_telt_als_onbekend(
+    hass: HomeAssistant, hass_ws_client, huis: Speelhuis
+) -> None:
+    """NIEUW GEDRAG. Een verdediging tegen data van een ánder, niet tegen onszelf.
+
+    `brightness` is een attribuut van een `light` die niet van ons is. HA typeert
+    hem als `int | None`, maar de statemachine dwingt niets af en een integratie die
+    er `"128"` in zet houdt niemand tegen. Zonder de `isinstance`-controle gaat die
+    string zo door naar `light.turn_on`.
+
+    Gevonden in de mutatieproef van fase 8 (M13), en het is dezelfde soort als
+    valkuil 59: alle tests gebruiken ons eigen testdubbel, en dat gedraagt zich
+    netjes.
+    """
+    hass.states.async_set(
+        "light.bedlamp", "on", {"friendly_name": "Bedlamp", "brightness": "128"}
+    )
+    assert voorbeeld.lampstand_van(hass, "light.bedlamp") == {"aan": True, "brightness": None}
+
+    client = await hass_ws_client(hass)
+    antwoord = await _stuur(client, _start(volume_pct=40, light=LAMP))
+    await _stuur(client, {"type": "unsubscribe_events", "subscription": antwoord["id"]})
+    await hass.async_block_till_done()
+
+    # Aan blijft aan, maar zonder een helderheid die we niet kunnen lezen.
+    assert _lampstand(huis) == [
+        {"dienst": "turn_on", "brightness_pct": 80},
+        {"dienst": "turn_on"},
+    ]

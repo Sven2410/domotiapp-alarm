@@ -48,6 +48,7 @@ from .validatie import (
     GEBRUIKERSVELDEN,
     SERVERVELDEN,
     ValidatieFout,
+    valideer_light,
     valideer_persoon,
 )
 from .volgende import eerstvolgende_keer_dat_tijd_voorbijkomt, sorteer, volgende_wekker
@@ -575,6 +576,10 @@ async def _handle_clear_message(hass, connection, msg) -> None:
         vol.Required("volume_pct"): vol.All(
             vol.Coerce(int), vol.Range(min=VOLUME_PCT_MIN, max=VOLUME_PCT_MAX)
         ),
+        # Optioneel, en `None` is een geldige waarde: de klant hoeft geen lamp te
+        # kiezen. De vorm wordt niet hier gekeurd maar in `valideer_light`, zodat
+        # er één plek is die weet wat een lamp is (SPEC 14.2).
+        vol.Optional("light"): vol.Any(None, dict),
     }
 )
 @websocket_api.async_response
@@ -592,7 +597,23 @@ async def _handle_preview(hass, connection, msg) -> None:
     """
     speaker: str = msg["speaker"]
     try:
-        await voorbeeld.async_start(hass, speaker, msg["sound"], msg["volume_pct"])
+        # Dezelfde validatie als bij `alarms/save`: de editor stuurt hier een keuze
+        # heen die nog niet is opgeslagen en dus nog niet gekeurd is. Een lamp met
+        # een helderheid buiten bereik hoort `invalid_format` te geven en niet stil
+        # door te gaan naar `light.turn_on`.
+        lamp = valideer_light(msg.get("light"), "light")
+        if lamp is not None:
+            geschikt, reden = entiteiten.is_wekkerlamp(hass, lamp["entity_id"])
+            if not geschikt:
+                raise voorbeeld.VoorbeeldGeweigerd("not_allowed", str(reden))
+        await voorbeeld.async_start(
+            hass, speaker, msg["sound"], msg["volume_pct"], lamp
+        )
+    except ValidatieFout as fout:
+        connection.send_error(
+            msg["id"], websocket_api.ERR_INVALID_FORMAT, f"{fout.veld}: {fout.bericht}"
+        )
+        return
     except voorbeeld.VoorbeeldGeweigerd as fout:
         connection.send_error(msg["id"], fout.code, str(fout))
         return
