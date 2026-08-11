@@ -66,7 +66,7 @@ from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
 
-from . import meldingen, noodrem, oploop as oploop_mod, radiomodus, ringing
+from . import abonnement, meldingen, noodrem, oploop as oploop_mod, radiomodus
 from .const import (
     DATA_STORE,
     DOMAIN,
@@ -80,7 +80,7 @@ from .noodrem import Uitkomst
 
 _LOGGER = logging.getLogger(__name__)
 
-# Sleutels in de context per afgaande wekker (`ringing.Register.actief`).
+# Sleutels in de context per afgaande wekker (`abonnement.Register.actief`).
 CTX_PERSON = "person"
 CTX_MOMENT = "moment"
 CTX_SPEAKER = "speaker"
@@ -157,7 +157,7 @@ async def async_laat_afgaan(
 
     # --- stap 3: volume op 0 -------------------------------------------
     doel_pct = int(wekker.get("volume_pct") or 0)
-    oploop_kan = await _async_zet_volume(hass, speaker, 0)
+    oploop_kan = await async_zet_volume(hass, speaker, 0)
     if not oploop_kan:
         # De speaker neemt geen volume aan. De wekker gaat wél af — het geluid is de
         # wekker — maar dan op het ingestelde niveau en zonder oploop (SPEC 11.7
@@ -167,7 +167,7 @@ async def async_laat_afgaan(
             speaker,
             alarm_id,
         )
-        await _async_zet_volume(hass, speaker, doel_pct)
+        await async_zet_volume(hass, speaker, doel_pct)
 
     # --- stap 4: wake-up light (SPEC 12) -------------------------------
     await _async_lamp_aan(hass, registry_id, person_entity_id, wekker)
@@ -208,7 +208,7 @@ async def async_laat_afgaan(
 
     # De wekker gaat af. In het register, zodat `alarms/get` hem meldt en `alarms/stop`
     # hem kan stoppen; en het `started`-event zodat een open kaart een stopknop wordt.
-    register = ringing.register_van(hass)
+    register = abonnement.register_van(hass)
     context: dict[str, Any] = {
         CTX_PERSON: person_entity_id,
         CTX_MOMENT: moment.isoformat(),
@@ -221,7 +221,7 @@ async def async_laat_afgaan(
     register.actief[(registry_id, alarm_id)] = context
     register.stuur(
         {
-            "event": ringing.EVENT_STARTED,
+            "event": abonnement.EVENT_STARTED,
             "person": person_entity_id,
             "alarm_id": alarm_id,
             "name": wekker.get("name"),
@@ -291,9 +291,9 @@ async def _async_faal(
 
     message = await meldingen.async_meld(hass, store, registry_id, wekker, kind)
 
-    ringing.register_van(hass).stuur(
+    abonnement.register_van(hass).stuur(
         {
-            "event": ringing.EVENT_FAILED,
+            "event": abonnement.EVENT_FAILED,
             "person": person_entity_id,
             "alarm_id": wekker["id"],
             "reason": kind,
@@ -391,7 +391,7 @@ def volume_pct_van(hass: HomeAssistant, speaker: str) -> int | None:
     return geclampt
 
 
-async def _async_zet_volume(hass: HomeAssistant, speaker: str, pct: int) -> bool:
+async def async_zet_volume(hass: HomeAssistant, speaker: str, pct: int) -> bool:
     """Zet het volume. Geeft terug of dat lukte; gooit nooit.
 
     Clampt zelf, en **logt als er geclampt moest worden**. Fase 0b mat dat MA buiten
@@ -489,7 +489,7 @@ class _Oploop:
     async def _async_tik(self, _nu: dt.datetime) -> None:
         self._unsub = None
 
-        register = ringing.register_van(self._hass)
+        register = abonnement.register_van(self._hass)
         if not register.is_afgaand(self._registry_id, self._alarm_id):
             _LOGGER.debug(
                 "Oploop van %s stopt: de wekker gaat niet meer af", self._alarm_id
@@ -520,7 +520,7 @@ class _Oploop:
 
         gezet = self._waarden[self._index]
         self._index += 1
-        await _async_zet_volume(self._hass, self._speaker, gezet)
+        await async_zet_volume(self._hass, self._speaker, gezet)
         self._laatst_gezet = gezet
 
         if not self.klaar:
@@ -609,7 +609,7 @@ def _maak_noodrem_achteraf(
     """
 
     async def _controleer(_nu: dt.datetime) -> None:
-        register = ringing.register_van(hass)
+        register = abonnement.register_van(hass)
         alarm_id = wekker["id"]
         if not register.is_afgaand(registry_id, alarm_id):
             return
@@ -632,7 +632,7 @@ def _maak_noodrem_achteraf(
         )
         register.stuur(
             {
-                "event": ringing.EVENT_FAILED,
+                "event": abonnement.EVENT_FAILED,
                 "person": person_entity_id,
                 "alarm_id": alarm_id,
                 "reason": meldingen.KIND_SPEAKER_LOST_DURING_PLAY,
@@ -653,7 +653,7 @@ def _maak_stoptimer(
     """
 
     async def _stop(_nu: dt.datetime) -> None:
-        context = ringing.register_van(hass).actief.get((registry_id, alarm_id))
+        context = abonnement.register_van(hass).actief.get((registry_id, alarm_id))
         if context is not None:
             # De unsub van deze timer is nu verlopen; hem laten staan zou `stop`
             # verleiden een afgelopen timer af te zeggen.
@@ -662,7 +662,7 @@ def _maak_stoptimer(
             "Wekker %s stopt automatisch na %d minuten", alarm_id, STOP_NA_MINUTEN
         )
         await async_stop_afgaan(
-            hass, registry_id, person_entity_id, alarm_id, ringing.REASON_TIMEOUT
+            hass, registry_id, person_entity_id, alarm_id, abonnement.REASON_TIMEOUT
         )
 
     return _stop
@@ -707,7 +707,7 @@ async def async_stop_afgaan(
     vergetelheid: wie om 06:45 gewekt is en om 06:47 op stop drukt, staat anders in het
     donker.
     """
-    register = ringing.register_van(hass)
+    register = abonnement.register_van(hass)
     context = register.actief.pop((registry_id, alarm_id), None)
     if context is None:
         return False
@@ -741,12 +741,12 @@ async def async_stop_afgaan(
                 alarm_id,
             )
         else:
-            await _async_zet_volume(hass, speaker, volume_voor)
+            await async_zet_volume(hass, speaker, volume_voor)
 
     if reason is not None:
         register.stuur(
             {
-                "event": ringing.EVENT_STOPPED,
+                "event": abonnement.EVENT_STOPPED,
                 "person": person_entity_id,
                 "alarm_id": alarm_id,
                 "reason": reason,
@@ -767,7 +767,7 @@ async def async_stop_alles(hass: HomeAssistant, reason: str | None = None) -> in
     2. Zonder stoptimer speelt de muziek **door**, en dan is er niemand meer die hem
        afzet — precies de lege woning waar SPEC 9.4 voor bestaat.
     """
-    register = ringing.register_van(hass)
+    register = abonnement.register_van(hass)
     gestopt = 0
     for (registry_id, alarm_id), context in list(register.actief.items()):
         if await async_stop_afgaan(

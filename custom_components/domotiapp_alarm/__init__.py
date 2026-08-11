@@ -29,7 +29,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
-from . import afvuren, meldingen, planner as planner_mod, resource, websocket
+from . import afvuren, meldingen, planner as planner_mod, resource, voorbeeld, websocket
 from .const import (
     CARD_FILENAME,
     CARD_URL_PATH,
@@ -159,6 +159,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # speelt de muziek door zonder dat er nog iemand is die hem afzet (SPEC 9.4).
         if gestopt := await afvuren.async_stop_alles(hass):
             _LOGGER.debug("%d afgaande wekker(s) gestopt bij unload", gestopt)
+
+        # Zelfde reden als hierboven: de maximumtimer van een voorbeeld is een
+        # async_call_later die anders tikt over een losgelaten hass.data[DOMAIN],
+        # en zonder die timer speelt het voorbeeld door zonder dat er nog iets is
+        # dat het afzet (SPEC 15.11).
+        if gestopt := await voorbeeld.async_stop_alles(hass):
+            _LOGGER.debug("%d lopend(e) voorbeeld(en) gestopt bij unload", gestopt)
 
         if js_url := data.pop(DATA_JS_URL, None):
             remove_extra_js_url(hass, js_url)

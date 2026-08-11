@@ -634,7 +634,7 @@ async def test_stop_is_idempotent(hass: HomeAssistant, hass_ws_client, omgeving)
         assert antwoord["result"]["ringing"] == []
 
 
-async def test_ringing_subscribe_ontvangt_gebeurtenissen(
+async def test_updates_subscribe_ontvangt_gebeurtenissen(
     hass: HomeAssistant, hass_ws_client, omgeving
 ) -> None:
     """Het abonnement levert de berichten uit SPEC 15.9.
@@ -643,16 +643,16 @@ async def test_ringing_subscribe_ontvangt_gebeurtenissen(
     gebeurtenis wordt hier via het register gestuurd — hetzelfde register dat fase
     3b vult. Zo is het doorgeefluik nu al vastgelegd.
     """
-    from custom_components.domotiapp_alarm import ringing
+    from custom_components.domotiapp_alarm import abonnement
 
     client = await hass_ws_client(hass)
     antwoord = await _stuur(
-        client, {"type": f"{DOMAIN}/ringing/subscribe", "person": PERSON_ENTITY_ID}
+        client, {"type": f"{DOMAIN}/updates/subscribe", "person": PERSON_ENTITY_ID}
     )
     assert antwoord["success"], antwoord
     abonnement_id = antwoord["id"]
 
-    ringing.register_van(hass).stuur(
+    abonnement.register_van(hass).stuur(
         {
             "event": "started",
             "person": PERSON_ENTITY_ID,
@@ -672,12 +672,12 @@ async def test_subscribe_filtert_op_person(
     hass: HomeAssistant, hass_ws_client, omgeving
 ) -> None:
     """NIEUW GEDRAG. Een kaart hoort alleen de wekkers van zijn eigen persoon."""
-    from custom_components.domotiapp_alarm import ringing
+    from custom_components.domotiapp_alarm import abonnement
 
     client = await hass_ws_client(hass)
-    await _stuur(client, {"type": f"{DOMAIN}/ringing/subscribe", "person": PERSON_ENTITY_ID})
+    await _stuur(client, {"type": f"{DOMAIN}/updates/subscribe", "person": PERSON_ENTITY_ID})
 
-    register = ringing.register_van(hass)
+    register = abonnement.register_van(hass)
     register.stuur({"event": "started", "person": "person.iemand_anders", "alarm_id": "x"})
     register.stuur({"event": "started", "person": PERSON_ENTITY_ID, "alarm_id": "eigen"})
 
@@ -694,7 +694,7 @@ async def test_ringing_wordt_getoond_in_get_en_gestopt(
     daarna niet meer. Zonder die eerste helft zou "ringing is leeg" triviaal waar
     zijn.
     """
-    from custom_components.domotiapp_alarm import ringing
+    from custom_components.domotiapp_alarm import abonnement
 
     client = await hass_ws_client(hass)
     antwoord = await _stuur(
@@ -703,7 +703,7 @@ async def test_ringing_wordt_getoond_in_get_en_gestopt(
     )
     alarm_id = antwoord["result"]["alarms"][0]["id"]
 
-    register = ringing.register_van(hass)
+    register = abonnement.register_van(hass)
     register.actief[(omgeving, alarm_id)] = {}
 
     antwoord = await _stuur(client, {"type": f"{DOMAIN}/alarms/get", "person": PERSON_ENTITY_ID})
@@ -971,7 +971,7 @@ async def test_niet_admin_mag_alle_tien_commandos(
         },
         {"type": f"{DOMAIN}/entities/list"},
         {"type": f"{DOMAIN}/alarms/stop", "person": PERSON_ENTITY_ID, "alarm_id": alarm_id},
-        {"type": f"{DOMAIN}/ringing/subscribe"},
+        {"type": f"{DOMAIN}/updates/subscribe"},
         {"type": f"{DOMAIN}/sound/search", "query": "jazz"},
         {
             "type": f"{DOMAIN}/alarms/clear_message",

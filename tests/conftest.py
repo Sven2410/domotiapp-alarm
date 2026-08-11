@@ -302,7 +302,30 @@ class Speelhuis:
         self._werk_state_bij()
 
     def laat_speaker_wegvallen(self) -> None:
-        self.hass.states.async_set(self.speaker, "unavailable", {})
+        """Laat de speaker wegvallen zoals Home Assistant dat werkelijk doet.
+
+        **Niet met een lege attributenlijst.** Valkuil 18 en de livemeting van
+        fase 3c zeggen wat er overblijft zodra een entiteit `unavailable` is:
+        `device_class`, `icon`, `friendly_name`, `supported_features` en
+        `entity_picture`. Wat verdwijnt zijn de extra state attributes —
+        `volume_level` en `mass_player_type`.
+
+        Dat verschil is niet cosmetisch. Met een lege lijst zou `is_ma_speaker`
+        (SPEC 7.2) een weggevallen speaker afkeuren op *ontbrekende features* in
+        plaats van dat de noodrem hem afkeurt op *onbereikbaarheid*, en dan toetst
+        een test een foutmelding die in productie nooit optreedt. Fase 4b liep
+        hier tegenaan bij de voorbeeldknop.
+        """
+        state = self.hass.states.get(self.speaker)
+        blijft = {}
+        if state is not None:
+            blijft = {
+                sleutel: waarde
+                for sleutel, waarde in state.attributes.items()
+                if sleutel
+                in ("device_class", "icon", "friendly_name", "supported_features", "entity_picture")
+            }
+        self.hass.states.async_set(self.speaker, "unavailable", blijft)
 
     def vind(self, uri: str, media_type: str = "radio") -> None:
         """Laat de URI-controle deze URI vinden (SPEC 11.2, vergelijking op de URI)."""

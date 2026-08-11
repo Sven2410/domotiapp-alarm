@@ -6,7 +6,10 @@
  */
 
 export const CARD_TYPE = "domotiapp-alarm-card";
+/** De Lovelace-config-editor: kiest de persoon (SPEC 16.2). */
 export const EDITOR_TYPE = "domotiapp-alarm-card-editor";
+/** De wekker-editor in de kaart zelf (SPEC 5). Iets anders dan de vorige. */
+export const WEKKER_EDITOR_TYPE = "domotiapp-alarm-editor";
 
 /** Naam en beschrijving in de kaartkiezer. */
 export const CARD_NAME = "DomotiApp Alarm";
@@ -16,18 +19,21 @@ export const DOCS_URL = "https://github.com/Sven2410/domotiapp-alarm";
 /** Het domein van de integratie; elk commando begint ermee (SPEC 15). */
 export const DOMAIN = "domotiapp_alarm";
 
-/**
- * De commando's die de kaart in deze fase gebruikt. `sound/search` hoort bij de
- * editor en dus bij fase 4b; die staat hier bewust nog niet.
- */
+/** De elf commando's uit SPEC 15. */
 export const CMD = Object.freeze({
   get: `${DOMAIN}/alarms/get`,
+  save: `${DOMAIN}/alarms/save`,
   setEnabled: `${DOMAIN}/alarms/set_enabled`,
   skipNext: `${DOMAIN}/alarms/skip_next`,
   delete: `${DOMAIN}/alarms/delete`,
   stop: `${DOMAIN}/alarms/stop`,
   clearMessage: `${DOMAIN}/alarms/clear_message`,
-  subscribe: `${DOMAIN}/ringing/subscribe`,
+  search: `${DOMAIN}/sound/search`,
+  entities: `${DOMAIN}/entities/list`,
+  previewStart: `${DOMAIN}/preview/start`,
+  // Fase 4b: hernoemd van `ringing/subscribe`. Het abonnement gaat over alles wat
+  // een open kaart actueel houdt, niet alleen over afgaan (SPEC 15.9).
+  subscribe: `${DOMAIN}/updates/subscribe`,
 });
 
 /**
