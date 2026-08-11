@@ -586,11 +586,23 @@ Vindplaatsen in `docs/fase-6/RAPPORT.md`.
     `play_media` had geweigerd; in productie bestond het geluid en was Spotify niet
     geautoriseerd. De klant — of de eigenaar — kijkt dan een half uur de verkeerde
     kant op, en dat is duurder dan geen melding. **Neem de reden van de dienst
-    over** als die er is: die wijst wél naar de oorzaak. Twee teksten met dezelfde
-    fout staan nog open: `volume_ramp_unavailable` beweert *"op het ingestelde
-    volume"* na een `volume_set` waarvan de uitkomst niet gelezen wordt, en
-    `skipped_grace_window` leidt *"omdat Home Assistant uit stond"* af uit een
-    moment dat alleen maar verstreken is.
+    over** als die er is: die wijst wél naar de oorzaak.
+
+    **Fase 6b vond er nog twee en daarmee het patroon**, en dat is bruikbaarder dan
+    de drie gevallen apart. Alle drie zijn ze geschreven **bij de SPEC-sectie en
+    niet bij de regel code die ze verstuurt**. SPEC beschrijft een *situatie* ("de
+    speaker kan geen volume aan", "Home Assistant stond uit"); de code stelt iets
+    veel smallers vast — één aanroep weigerde, één moment verstreek. Het gat
+    daartussen ís de leugen. Twee gevolgen:
+
+    - **De grammaticale toets werkt.** Elke tekst met een *"omdat"*, een *"want"* of
+      een bewering over de buitenwereld ("bestaat niet meer", "op het ingestelde
+      volume") is verdacht: die woorden vullen het *waarom* in, en de code kent
+      alleen het *wat*.
+    - **Het is een vindplaatsprobleem.** De reparatie was alle drie de keren: kijk
+      naar de regel die de melding *stuurt*, en schrijf op wat daar bekend is.
+      `meldingen.py` draagt daarom per herschreven tekst een comment met de
+      vindplaats in de **code**, niet in SPEC.
 
 54. **MA heeft een ingebouwde `test`-muziekprovider, en die maakt album en
     afspeellijst toetsbaar zonder streamingprovider.** 5 artiesten, 25 albums, 500
@@ -618,6 +630,45 @@ Vindplaatsen in `docs/fase-6/RAPPORT.md`.
     een bevroren `hass`, maar een verse `hass` die de nieuwe waarde nog niet heeft.
     Wacht een paar seconden, of vergelijk op **verandering** in plaats van op
     waarde.
+
+### Nieuw in fase 6b
+
+Vindplaatsen in `docs/fase-6b/RAPPORT.md`.
+
+57. **HA heeft géén menu-component die je op een dashboard mag gebruiken.** Gemeten
+    op 2026.8.1, verse pagina plus vier seconden: `ha-md-menu`, `ha-md-menu-item`,
+    `ha-button-menu`, `ha-md-button-menu` en `ha-menu` zijn **geen van alle**
+    gedefinieerd. Wél: `ha-card`, `ha-form`, `ha-select`, `ha-switch`,
+    `ha-list-item`, `ha-icon`, `ha-icon-button`, `ha-tooltip`. Dat is valkuil 44 en
+    50 op hun scherpst — een `<ha-button-menu>` rendert dan als een leeg
+    inline-element, dus een **onzichtbaar menu zonder fout in de console**.
+    Bijvangst: `ha-switch` is inmiddels wél gedefinieerd waar fase 4a hem nog
+    vermeed. Welke component geladen is verschilt dus **per component, per
+    dashboard én per HA-versie**; meet het opnieuw in plaats van dit lijstje te
+    geloven.
+
+58. **Een zwevend menu hoort binnen de kaart te blijven, en dat is een meetbare
+    eis.** Een `position: absolute` menu dat altijd onder de knop hangt, steekt bij
+    de onderste rij onder de kaart uit — gemeten: **71 px**, over wat er op het
+    dashboard onder stond. De uitweg is `position: fixed` plus een berekening die
+    omhoog klapt zodra het er onder niet past, met het **venster** als laatste grens
+    (een menu dat half buiten beeld valt is erger dan een menu dat een randje
+    overlapt). En: **meet de hoogte van het menu**, leid hem niet uit de CSS af. De
+    tekst verschilt ("Overslaan" tegenover "Toch niet overslaan") en de
+    lettergrootte komt uit het thema van de gebruiker; een geraden hoogte duwt het
+    menu bij een grote letter alsnog over de rand. Render het daarom eerst
+    `visibility: hidden` — een element zonder layout heeft geen hoogte om te meten.
+
+59. **Een verdediging tegen data van een ánder wordt door geen enkele test
+    geraakt.** De mutatieproef van 6b vond twee gaten, allebei in dezelfde functie:
+    de `isinstance(..., bool)`-controle en de `STATE_UNAVAILABLE`-controle op een
+    attribuut van een `media_player` die niet van ons is. Reden: alle tests gebruiken
+    ons eigen testdubbel, en dat gedraagt zich netjes. HA's statemachine dwingt
+    niets af, dus een integratie die `"true"` in `shuffle` zet houdt niemand tegen.
+    **Wat je doet:** bouw in de test expliciet de combinatie die HA in de praktijk
+    niet maakt maar wel toestaat (`unavailable` mét attributen, een string waar een
+    bool hoort). Dit is valkuil 34 tweede rij, met een nieuw soort "ander pad": niet
+    een ander codepad van onszelf, maar invoer die alleen van buiten kan komen.
 
 ```bash
 npm install                # eenmalig
@@ -723,7 +774,8 @@ en die draait alleen bij opname in de standaardwinkel. Zie
 | 4b | De editor (SPEC 5) achter de plusknop en achter een tik op een rij, met zoeken in MA, de zomertijdwaarschuwing en de voorbeeldknop. `ringing/subscribe` verbreed tot `updates/subscribe` met een `changed`-bericht uit de opslaglaag — daarmee is het openstaande punt van 4a gesloten. `preview/start` als abonnement, zodat een weggeklikt tabblad het geluid stopt (gemeten: 8,8 s). 69 JS- en 238 Python-tests, 31 mutaties in twee rondes | gemerged |
 | 4c | De twee openstaande SPEC-punten van 4b gedicht: `sound/search` geeft per treffer `endless` (op dezelfde providerlijst als het afvuren) en `entities/list` geeft `filtered_out`, waarmee de drie situaties van SPEC 7.4 onderscheidbaar zijn. Het zoekveld past nu op een telefoon: placeholder "Zoek media", knop een vergrootglas. 77 JS- en 264 Python-tests, 23 mutaties in twee rondes | gemerged |
 | 5 | HACS-klaar: `manifest.json` en `hacs.json` geverifieerd tegen hassfest én HACS' eigen schema's (beide echt gedraaid, met negatieve controle), README herschreven voor de klant, en de installatie bewezen op een verse HA op 8130 waar de integratie als **kopie** in staat zoals HACS hem levert. Geen functionele wijziging | gemerged, 1.0.0 |
-| **6** | **Drie bevindingen uit productie op 1.0.0. (1) Shuffle staat nu altijd aan bij afspeellijst, album en artiest — `media_player.shuffle_set` vóór `play_media`, want MA schudt bij het laden van de queue (SPEC 9.6, nieuw). (2) De melding `sound_gone` zei "bestaat niet meer" terwijl het geluid bestond; hij zegt nu "kon niet gestart worden" mét de reden van MA (SPEC 11.7 herschreven — buiten de gestelde grens, gemeld). (3) Een afgelopen eenmalige wekker zette zichzelf nooit uit terwijl SPEC 14.5 dat sinds fase 2 eist; dat is nu op alle drie de routes gerepareerd, en opnieuw aanzetten geeft een nieuwe `one_shot_at` (SPEC 15.3). 297 Python-tests, 22 mutaties in twee rondes (3 gaten gedicht). Audit van SPEC 11.7: nog twee teksten claimen te veel** | **deze ronde, PR #13** |
+| 6 | Drie bevindingen uit productie op 1.0.0. (1) Shuffle staat nu altijd aan bij afspeellijst, album en artiest — `media_player.shuffle_set` vóór `play_media`, want MA schudt bij het laden van de queue (SPEC 9.6, nieuw). (2) De melding `sound_gone` zei "bestaat niet meer" terwijl het geluid bestond; hij zegt nu "kon niet gestart worden" mét de reden van MA (SPEC 11.7 herschreven — buiten de gestelde grens, gemeld). (3) Een afgelopen eenmalige wekker zette zichzelf nooit uit terwijl SPEC 14.5 dat sinds fase 2 eist; dat is nu op alle drie de routes gerepareerd, en opnieuw aanzetten geeft een nieuwe `one_shot_at` (SPEC 15.3). 297 Python-tests, 22 mutaties in twee rondes (3 gaten gedicht). Audit van SPEC 11.7: nog twee teksten claimen te veel | gemerged |
+| **6b** | **Vier bevindingen. (1) Het overloopmenu bleef onder de kaart hangen — HA heeft géén bruikbare menu-component (gemeten), dus een eigen `position: fixed` menu dat omhoog klapt en binnen de kaart blijft; gemeten op 373 px: was 71 px buiten de kaart, is nu 57 px erbinnen. (2) De kopbalk met de eerstvolgende wektijd en de plusknop staat nu **boven** de lijst; de lege staat ís die kopbalk (SPEC 3.1–3.3). (3) De laatste twee liegende teksten herschreven, mét het patroon erachter (SPEC 11.7). (4) Shuffle gaat na de wekker terug naar wat het was, met de drie regels van SPEC 9.5; live `false → true → false`. 308 Python- en 91 JS-tests, 23 mutaties in twee rondes (2 gaten gedicht)** | **deze ronde, PR #14** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -929,6 +981,23 @@ en 15.3).
    functie (`afvuren.velden_bij_verbruikt_moment`) juist omdat het anders per route
    uiteenloopt.
 
+**Wat er staat na fase 6b:** de kaart is op een telefoon doorgelopen en de twee
+dingen die daar opvielen zijn weg. De kopbalk met de eerstvolgende wektijd en de
+plusknop staat **boven** de lijst, en het overloopmenu blijft binnen de kaart in
+plaats van eronder te hangen. Verder zegt geen enkele meldingstekst uit SPEC 11.7
+nog iets dat de code niet vaststelt, en laat de wekker geen shuffle meer aan staan.
+
+**De twee regels van fase 6b die je niet mag omdraaien** (zie
+`docs/fase-6b/RAPPORT.md`):
+
+1. **Meet welke HA-component bestaat vóór je erop bouwt** — en verwacht dat het
+   antwoord "geen" is. Er is geen bruikbare menu-component (valkuil 57), en wat er
+   wél is verschilt per HA-versie.
+2. **Wat wij aanzetten, zetten wij terug — en niets anders.** Volume en shuffle
+   volgen dezelfde drie regels: lezen vóór zetten, niets terugzetten wat niet te
+   lezen was, en niets terugzetten wat we niet hebben aangezet. Dat laatste is geen
+   zuinigheid: het voorkomt dat we een wijziging van de klant zelf ongedaan maken.
+
 ### Waar de volgende fase begint
 
 `SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **elf** commando's die de
@@ -998,9 +1067,9 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
 | **De volume-oploop begint 2,1–2,6 s te laat** doordat `play_media` blokkeert tot MA de stream heeft opgezet. Niet-blokkerend aanroepen kan niet: `core.py:2953-2959` vangt de exceptie binnen HA af, en dan vervallen de `radio_mode`-terugval én de foutmelding. De oploop eerder starten verandert SPEC 9.1 en de betekenis van het `started`-event. **Aanbeveling die niet gebouwd is:** de oploop laten *inhalen* — begin op de stap die bij de verstreken tijd hoort. Meting ligt vast in SPEC 20.1 punt 9 | `afvuren.py` / SPEC 9.1, 9.3 | **beslissing van de eigenaar** |
 | ~~De tekst bij `sound_gone` claimt te veel~~ **OPGELOST in fase 6**: hij zegt nu "kon niet gestart worden" met de reden van MA erbij | SPEC 11.7 | gedaan |
-| **`volume_ramp_unavailable` claimt "afgegaan op het ingestelde volume"** terwijl de `volume_set` die dat zou doen dezelfde is die net weigerde, en de uitkomst ervan niet gelezen wordt (`afvuren.py:198-210`). Voorstel: *"De wekker is afgegaan, maar het volume was op deze speaker niet in te stellen; het oplopende volume is overgeslagen."* | SPEC 11.7 | **eigenaar**, woordkeuze |
-| **`skipped_grace_window` claimt "omdat Home Assistant uit stond"** terwijl alleen vaststaat dat het moment verstreek zonder `last_fired`. Tegenvoorbeeld: een wekker die na dat moment is aangemaakt, meldt dit bij de eerstvolgende herstart. Voorstel: *"…is niet afgegaan; Home Assistant heeft dat moment gemist."* | SPEC 11.7 | **eigenaar**, woordkeuze |
-| **Shuffle wordt na de wekker NIET teruggezet**, terwijl het volume dat wél wordt (SPEC 9.5) en met precies dezelfde motivatie: geen bijwerking die de klant niet vroeg. Gemeten in fase 6: na een afspeellijst-wekker stond `shuffle` op de speaker nog op `true`. Niet gebouwd — het is een uitbreiding van de opdracht en kost een extra lezing plus een aanroep in het stoppad | `afvuren.py` / SPEC 9.5, 9.6 | **beslissing van de eigenaar** |
+| ~~`volume_ramp_unavailable` en `skipped_grace_window` claimen te veel~~ **OPGELOST in fase 6b**, met de voorstellen die de eigenaar heeft goedgekeurd. Het patroon erachter staat nu in valkuil 53 | SPEC 11.7 | gedaan |
+| ~~Shuffle wordt na de wekker niet teruggezet~~ **OPGELOST in fase 6b**: hij gaat terug met dezelfde drie regels als het volume (SPEC 9.6) | `afvuren.py` / SPEC 9.5, 9.6 | gedaan |
+| **Het overloopmenu is niet met het toetsenbord te bedienen.** Er is geen pijltjesnavigatie, geen focusval en geen Escape; HA's eigen menu-componenten die dat zouden oplossen bestaan niet op een dashboard (valkuil 57). `aria-haspopup`, `aria-expanded` en `role="menuitem"` staan er wél, dus een schermlezer kondigt het correct aan. Voor wandtablet en telefoon voldoende; voor toetsenbordgebruik niet | de kaart | bij gelegenheid |
 | **De waarschuwing bij een eindig geluid blijft weg bij een BESTAANDE wekker.** `endless` komt uit `sound/search` en staat niet in de opslag — het is een eigenschap van de provider, niet van de keuze (SPEC 15.6). Wie hem ook wil zien bij het openen van een oude wekker, moet `endless` in de opslag zetten of `alarms/get` het laten meesturen. Aanvaard in fase 4c | SPEC 8.2 / 15.1 | **eigenaar**, als hij het mist |
 | **De provider-as van `endless` is niet live aangetoond**, alleen de soort-as: er is geen streamingprovider op deze instance (fase 0b). Unittests dekken het paar `spotify`/`somafm` op dezelfde soort | `radiomodus.py` | de eigenaar toetst het op zijn eigen HA |
 | **De tijdkiezer is niet op iOS of Android getoetst.** SPEC 5.2 eist alle drie de platformen. Gemeten is dat `<input type="time">` op desktop met toetsen én kliks werkt en dat `ha-time-input` op het dashboard **niet geladen** is (valkuil 50). Een echt apparaat is nodig | de editor | **eigenaar toetst dit op zijn telefoon** |

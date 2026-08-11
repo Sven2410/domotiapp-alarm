@@ -228,6 +228,11 @@ class Speelhuis:
         # Het volume dat de nagebootste speaker "heeft". `volume_set` werkt het bij,
         # zodat de oploop zijn eigen waarde terugleest zoals bij een echte speaker.
         self.volume_niveau: float | None = 0.5
+        # De shuffle-stand die de nagebootste speaker "heeft". `shuffle_set` werkt
+        # hem bij, zodat het terugzetten bij het stoppen zijn eigen waarde terugleest
+        # zoals bij een echte speaker. `None` = het attribuut ontbreekt, wat gebeurt
+        # zodra de entiteit `unavailable` is (valkuil 18).
+        self.shuffle_stand: bool | None = False
         self.speaker = "media_player.slaapkamer"
 
     def _boek(self, naam: str, data: dict[str, Any]) -> None:
@@ -274,6 +279,8 @@ class Speelhuis:
 
         async def _shuffle(call) -> None:
             self._boek("media_player.shuffle_set", call.data)
+            self.shuffle_stand = bool(call.data["shuffle"])
+            self._werk_state_bij()
 
         self.hass.services.async_register("music_assistant", "play_media", _play)
         self.hass.services.async_register(
@@ -304,12 +311,29 @@ class Speelhuis:
             attributen.pop("volume_level", None)
         else:
             attributen["volume_level"] = self.volume_niveau
+        if self.shuffle_stand is None:
+            attributen.pop("shuffle", None)
+        else:
+            attributen["shuffle"] = self.shuffle_stand
         self.hass.states.async_set(self.speaker, state.state, attributen)
 
     def zet_volume_op(self, pct: int | None) -> None:
         """Draai zelf aan de knop, zoals een gebruiker (SPEC 9.3)."""
         self.volume_niveau = None if pct is None else pct / 100
         self._werk_state_bij()
+
+    def zet_shuffle_op(self, stand: bool | None) -> None:
+        """De shuffle-stand van de speaker vóór de wekker. `None` = niet leesbaar."""
+        self.shuffle_stand = stand
+        self._werk_state_bij()
+
+    def shuffles(self) -> list[bool]:
+        """De shuffle-waarden die er gezet zijn, in volgorde."""
+        return [
+            bool(data["shuffle"])
+            for naam, data in self.aanroepen
+            if naam == "media_player.shuffle_set"
+        ]
 
     def laat_speaker_wegvallen(self) -> None:
         """Laat de speaker wegvallen zoals Home Assistant dat werkelijk doet.
