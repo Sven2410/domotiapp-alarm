@@ -1,4 +1,4 @@
-"""De negen WebSocket-commando's (SPEC 15).
+"""De tien WebSocket-commando's (SPEC 15).
 
 **Geen enkel commando is admin-only** (SPEC 17). Dat is een bewuste keuze: klanten
 draaien Fully Kiosk met een niet-admin account en juist zij moeten hun wekkers
@@ -60,6 +60,7 @@ TYPE_SEARCH = f"{DOMAIN}/sound/search"
 TYPE_ENTITIES = f"{DOMAIN}/entities/list"
 TYPE_STOP = f"{DOMAIN}/alarms/stop"
 TYPE_SUBSCRIBE = f"{DOMAIN}/ringing/subscribe"
+TYPE_CLEAR_MESSAGE = f"{DOMAIN}/alarms/clear_message"
 
 # De acht emmers die music_assistant.search teruggeeft (SPEC 8.1). De volgorde
 # hier is de volgorde in het antwoord: afspeellijsten en radio eerst, want dat is
@@ -472,6 +473,49 @@ def _handle_subscribe(hass, connection, msg) -> None:
     connection.send_result(msg["id"])
 
 
+# --- 15.10 alarms/clear_message ----------------------------------------
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): TYPE_CLEAR_MESSAGE,
+        vol.Required("person"): cv.string,
+        vol.Required("alarm_id"): cv.string,
+    }
+)
+@websocket_api.async_response
+@_fout_omzetten
+async def _handle_clear_message(hass, connection, msg) -> None:
+    """De "Begrepen"-knop (SPEC 11.7 en 15.10).
+
+    `last_message` staat in de opslag zodat een melding een herstart overleeft en
+    ook zichtbaar is als de browser pas uren later opengaat. Zonder dit commando is
+    de knop een knop die liegt: wegklikken in één browser laat de melding staan op
+    het wandtablet en zet hem na een herlaadbeurt terug.
+
+    **Dit is geen omweg om servervelden te zetten.** Het commando neemt geen
+    waarde aan — er is geen veld waarin de kaart een melding, een `kind` of een
+    `severity` kan meesturen. Het zet `last_message` onvoorwaardelijk op `None` en
+    kan dus maar één ding: wissen wat de server zelf heeft geschreven. De regel uit
+    SPEC 15.2 blijft daarmee onaangetast: `skip_next`, `one_shot_at`, `last_fired`
+    en `last_message` komen nooit met een waarde van de kaart.
+
+    Herplannen gebeurt zoals bij elke opslagwijziging via een commando (SPEC 13.5).
+    Het is hier feitelijk een lege ronde — een melding wissen verandert `enabled`,
+    `time`, `days`, `skip_next` noch `last_fired` — maar de uitzondering zou
+    duurder zijn dan de ronde: dan moet iemand bij de volgende wijziging opnieuw
+    beoordelen of dit commando de planning raakt.
+    """
+    registry_id = registry_id_van_person(hass, msg["person"])
+    bijgewerkt = await _store(hass).async_werk_velden_bij(
+        registry_id, msg["alarm_id"], {"last_message": None}
+    )
+    if bijgewerkt is None:
+        raise PersonNietGevonden(f"wekker {msg['alarm_id']} bestaat niet bij {msg['person']}")
+    await planner.async_herplan(hass)
+    connection.send_result(msg["id"], _toestand(hass, msg["person"]))
+
+
 # --- registratie -------------------------------------------------------
 
 _COMMANDOS = (
@@ -484,12 +528,13 @@ _COMMANDOS = (
     _handle_entities,
     _handle_stop,
     _handle_subscribe,
+    _handle_clear_message,
 )
 
 
 @callback
 def async_register(hass: HomeAssistant) -> None:
-    """Registreer de negen commando's, één keer per HA-run.
+    """Registreer de tien commando's, één keer per HA-run.
 
     HA kent geen `async_unregister_command`, dus een tweede registratie zou de
     eerste overschrijven. De vlag voorkomt dat bij een tweede config entry.

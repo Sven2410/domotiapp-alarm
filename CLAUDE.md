@@ -472,6 +472,46 @@ Vindplaatsen in `docs/fase-3c/RAPPORT.md` (34–40) en `RAPPORT-BIS.md` (41–42
     daarmee stil. Nagelopen in fase 3c-bis voor `play_media`, dat 2,1–2,6 s blokkeert;
     die twee seconden zijn de prijs van weten dát het lukte.
 
+### Nieuw in fase 4a
+
+Vindplaatsen in `docs/fase-4a/RAPPORT.md`.
+
+43. **De browsertool klikt in SCREENSHOTCOÖRDINATEN, `getBoundingClientRect` geeft
+    CSS-pixels.** Gemeten in fase 4a: de screenshot is 1568 px breed terwijl
+    `window.innerWidth` 1920 was — een factor **0,8167**. Een coördinaat uit een
+    `getBoundingClientRect` rechtstreeks aan `computer.left_click` geven, klikt dus
+    ~19 % te ver naar rechts en naar beneden. Andersom klopte een coördinaat die uit
+    een screenshot was afgelezen wél, wat het verraderlijk maakt: het gaat pas mis
+    zodra je gaat rekenen. **Reken elke klikcoördinaat om**
+    (`css * 1568 / innerWidth`) en doe er een hit-test met `elementFromPoint`
+    achteraan. Dit komt bovenop valkuil 16 (verse coördinaten) — hier was de coördinaat
+    vers en tóch fout.
+
+44. **Een HA-component die lui geladen wordt, rendert als niets — zonder fout.**
+    Een custom element dat niet gedefinieerd is, is een geldig HTML-element met
+    `display: inline` en geen inhoud. Zet je `ha-switch` of `ha-button-menu` op een
+    dashboard waar niets anders ze binnenhaalt, dan is je schakelaar **onzichtbaar**
+    en staat er niets in de console. Fase 4a gebruikt daarom eigen knoppen met inline
+    SVG en alleen `ha-card` (die de dashboardchrome hoe dan ook laadt) en `ha-form`
+    (die alleen in HA's eigen kaarteditor-dialoog voorkomt, waar hij gegarandeerd is).
+    Bijvangst: eigen knoppen hebben hun oppervlak uit CSS in plaats van uit een
+    asynchroon icoon, en dat maakt valkuil 8 hier onschadelijk.
+
+45. **`overflow: hidden` op de `ha-card` knipt elk uitklapmenu af.** Nodig om kinderen
+    binnen de hoekafronding te houden, fataal voor een overloopmenu op de onderste
+    rij. Fase 4a laat de kaart overlopen en geeft de stopknop zelf
+    `var(--ha-card-border-radius)`. Gemeten: het menu steekt 5 px onder de kaart uit
+    en is zichtbaar.
+
+46. **Een mutatie-oefening die 100 % vangt, heeft de verkeerde mutaties.** Fase 4a's
+    eerste ronde van 22 mutaties werd volledig gevangen — en dat was geen goed teken,
+    want de oefening vond in fase 1, 3a, 3b en 3c elke keer iets. Een tweede ronde met
+    mutaties die **naar gaten zochten in plaats van dekking te bevestigen** vond er
+    meteen twee, waarvan één een echte fout in de implementatie blootlegde
+    (`typeof [] === "object"`, dus een lijst kwam door een objectcontrole heen).
+    Vuistregel: schrijf de tweede ronde pas nadat de eerste groen is, en richt hem op
+    de regels waarvan je zou moeten toegeven dat je ze niet toetst.
+
 ---
 
 ## Commando's
@@ -557,7 +597,8 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 3a | De server-side laag zonder klok: `store.py` met de kapotte-data-scheiding, `validatie.py` en `volgende.py` (beide puur), `entiteiten.py` met de labelfiltering, en de negen WebSocket-commando's. 112 Python-tests, 13 mutaties nagelopen | gemerged |
 | 3b | De planner: `planner.py` (plannen, inhaalslag, respijtvenster, herplannen), `afvuren.py` als naad met 3c, `meldingen.py` met de drie kanalen en de repair issues die 3a openliet. 137 Python-tests, 17 mutaties nagelopen, live gemeten afwijking 12 ms | gemerged |
 | 3c | Het afvuren: de acht stappen van SPEC 9.1, `noodrem.py`, `oploop.py` en `radiomodus.py` (beide puur), de wake-up light en de stoptimer. 39 mutaties nagelopen (drie gaten gevonden en gedicht). Valkuil 32 opgelost — oorzaak was de `my`-integratie, niet `external_url`. Live: +2,153 s afwijking, oploop 1,006 s per stap, audio bewezen aan de speakerkant. Eén blokkerende bevinding, opgelost in 3c-bis | in PR #8 |
-| **3c-bis** | **De URI-controle vervalt (SPEC 11.2 herschreven, 11.2.1 vervallen, 11.2.2 met een nieuw criterium). De SomaFM-wekker die in 3c niet afging, gaat nu af met 0 van 87 s stilte. 212 tests, 5 mutaties. `play_media` blokkeert 2,1–2,6 s en dat is niet weg te nemen zonder de foutdetectie te verliezen (`core.py:2953-2959`)** | **deze ronde, PR #8** |
+| 3c-bis | De URI-controle vervalt (SPEC 11.2 herschreven, 11.2.1 vervallen, 11.2.2 met een nieuw criterium). De SomaFM-wekker die in 3c niet afging, gaat nu af met 0 van 87 s stilte. 212 tests, 5 mutaties. `play_media` blokkeert 2,1–2,6 s en dat is niet weg te nemen zonder de foutdetectie te verliezen (`core.py:2953-2959`) | gemerged |
+| **4a** | **De kaart in rusttoestand en de stoptoestand: lijst, schakelaar, overloopmenu, bevestiging bij verwijderen, melding met "Begrepen", en de kaart die één stopknop wordt. Twee pure modules (`weergave.js`, `kaartconfig.js`), de config-editor met `ha-form`. Een **tiende commando** `alarms/clear_message` erbij, want SPEC 11.7 vroeg een knop die SPEC 15 niet kon bedienen; SPEC 15.10/15.11 bijgewerkt met toestemming van de eigenaar. 40 JS- en 216 Python-tests, 28 mutaties (2 gaten gevonden)** | **deze ronde, PR #9** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -691,12 +732,35 @@ verwerking):
   betere alternatief maar de **enige** route — zie SPEC 11.2.2. De afweging over
   `runtime_data.mass` staat nog, maar de weegschaal is gekanteld.
 
-### Waar fase 4 begint
+**Wat er staat na fase 4a:** de kaart in rusttoestand en de stoptoestand. Wekkers zijn
+te zien, aan en uit te zetten, over te slaan en te verwijderen; een melding is te lezen
+en weg te klikken; en gaat er een wekker af, dan wordt de hele kaart één stopknop —
+zowel terwijl hij openstaat (via `ringing/subscribe`) als bij het openen (via het veld
+`ringing` van `alarms/get`). Wat er nog niet is: **de editor** (SPEC 5) — tijdkiezer,
+zoeken in Music Assistant, speaker- en lampkiezer, voorbeeldknop. Dat is fase 4b.
 
-De server-side laag is af en `SPEC.md` is bindend en volledig. Wat er nog niet is: **de
-kaart en de editor**. SPEC 15 beschrijft de negen commando's die de kaart mag gebruiken;
-dat is de bron, niet dit bestand. Wat hieronder staat is wat je uit SPEC *niet* kunt
-lezen omdat het gemeten is.
+**De drie regels van de kaart die je niet mag omdraaien** (zie
+`docs/fase-4a/RAPPORT.md`):
+
+1. **De kaart rekent niets uit wat de server al weet.** `next_fire.text` komt
+   kant-en-klaar mee (SPEC 3.3) en `alarms/get` levert de lijst gesorteerd (SPEC 3.4).
+   Twee implementaties van dezelfde planning lopen uiteen — dat is de fout die
+   DomotiApp Scene met de helderheidsschaal maakte.
+2. **De stopknop blijft staan bij een onbekend alarm-ID.** Tussen het `started`-event
+   en het antwoord van `alarms/get` kent de kaart het ID wel en de wekker nog niet.
+   Verdwijnt de knop dan, dan krijgt de klant het geluid pas na 30 minuten uit
+   (SPEC 9.4). Er staat dan een neutrale naam in plaats van een verzonnen naam — en dit
+   is **live gezien**, niet bedacht: fase 4a mat precies dat venster.
+3. **"Begrepen" wist server-side, nooit lokaal.** `last_message` staat in de opslag
+   zodat hij een herstart overleeft en op elk scherm zichtbaar is (SPEC 11.7). Lokaal
+   verbergen laat hem staan op het wandtablet en zet hem terug na een herlaadbeurt.
+   Daarvoor bestaat `alarms/clear_message` (SPEC 15.10).
+
+### Waar fase 4b begint
+
+`SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **tien** commando's die de
+kaart mag gebruiken; dat is de bron, niet dit bestand. Wat hieronder staat is wat je
+uit SPEC *niet* kunt lezen omdat het gemeten is.
 
 **Vier dingen die de kaart moet doen en waar je anders tegenaan loopt:**
 
@@ -710,6 +774,13 @@ lezen omdat het gemeten is.
    `notice` zien er verschillend uit (SPEC 11.7); `kind` is om op te vergelijken.
 4. **`getGridOptions` moet `rows: "auto"` teruggeven** (valkuil 12). Een wekkerkaart
    verandert van hoogte, dus een vast getal laat hem over de "+"-knop lopen.
+
+Punt 1, 3 en 4 zijn in fase 4a gebouwd en gemeten; ze staan hier omdat de **editor** ze
+opnieuw nodig heeft. Punt 2 is in 4a alleen voor `started` en `failed` live gezien —
+`stopped` kwam er als antwoord van `alarms/stop` en niet als event.
+
+**Een dashboard om in te meten staat klaar:** `/fase-4a/0` (sections-weergave, de kaart
+op `person.dev`) en `/fase-4a/spec163` met de drie gevallen van SPEC 16.3 naast elkaar.
 
 **En bij het meten in de browser:** valkuil 37 (een vastgehouden `hass` leest een bevroren
 `states`-snapshot) heeft in fase 3c een geslaagde toets als mislukt laten lijken. Haal
@@ -737,10 +808,11 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
 | **De volume-oploop begint 2,1–2,6 s te laat** doordat `play_media` blokkeert tot MA de stream heeft opgezet. Niet-blokkerend aanroepen kan niet: `core.py:2953-2959` vangt de exceptie binnen HA af, en dan vervallen de `radio_mode`-terugval én de foutmelding. De oploop eerder starten verandert SPEC 9.1 en de betekenis van het `started`-event. **Aanbeveling die niet gebouwd is:** de oploop laten *inhalen* — begin op de stap die bij de verstreken tijd hoort. Meting ligt vast in SPEC 20.1 punt 9 | `afvuren.py` / SPEC 9.1, 9.3 | **beslissing van de eigenaar** |
 | **De tekst van SPEC 11.7 bij `sound_gone` stelt het zekerder dan de code weet**: "het gekozen geluid bestaat niet meer" terwijl er alleen vaststaat dat het niet startte. De soort is juist, de formulering claimt te veel. `"kon niet gestart worden"` zou nauwkeuriger zijn | SPEC 11.7 | **eigenaar**, woordkeuze |
-| `getCardSize()` ontbreekt; masonry niet gemeten. `getGridOptions` moet `rows: "auto"` geven (valkuil 12) | de kaart | **4** |
-| `panel: true` niet aangeraakt (`frontend#52570`); voor de stoptoestand inmiddels een vastgelegde beperking (SPEC 20.1 punt 2) | de kaart | 4 of later |
-| **De kaart moet een zoekresultaat uitkleden** vóór `alarms/save`: `album` en `artists` worden geweigerd (valkuil 39) | de editor | **4** |
-| **Album, artiest en los nummer zijn nooit live getoetst** — geen streamingprovider op deze instance (fase 0b, T3). De editor moet er wél mee omgaan, en de waarschuwing uit SPEC 8.3.1 hoort juist bij die soorten | de editor | **4**, en de eigenaar toetst het op zijn eigen HA |
+| **De kaart ziet wijzigingen van buiten zichzelf niet.** Elk commando geeft de volledige toestand terug (SPEC 15.2), dus de kaart die zélf iets doet blijft actueel — maar SPEC 15 kent **geen abonnement op opslagwijzigingen**, alleen op `ringing`. Een wekker die op de telefoon wordt gewijzigd verschijnt op het wandtablet pas als dat dashboard opnieuw opengaat. Gemeten in fase 4a. Met een editor erbij (4b) wordt dit merkbaar. Vraagt een elfde commando of een uitbreiding van `ringing/subscribe` | SPEC 15 / de kaart | **beslissing van de eigenaar, vóór of tijdens 4b** |
+| `getCardSize()` bestaat sinds 4a (1 per rij + 1, en 3 in de stoptoestand) maar is **niet in een masonry-weergave nagemeten**; het dashboard staat in sections-weergave zoals SPEC 20.1 punt 2 voorschrijft | de kaart | 4b of later |
+| `panel: true` niet aangeraakt (`frontend#52570`); voor de stoptoestand inmiddels een vastgelegde beperking (SPEC 20.1 punt 2) | de kaart | 4b of later |
+| **De kaart moet een zoekresultaat uitkleden** vóór `alarms/save`: `album` en `artists` worden geweigerd (valkuil 39) | de editor | **4b** |
+| **Album, artiest en los nummer zijn nooit live getoetst** — geen streamingprovider op deze instance (fase 0b, T3). De editor moet er wél mee omgaan, en de waarschuwing uit SPEC 8.3.1 hoort juist bij die soorten | de editor | **4b**, en de eigenaar toetst het op zijn eigen HA |
 
 Bij de twee kaartpunten in die tabel: `panel: true` staat in DomotiApp Scene als
 openstaand punt (`frontend#52570`) en raakt juist kiosk-opstellingen. Voor de
