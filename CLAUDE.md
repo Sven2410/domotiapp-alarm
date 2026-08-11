@@ -625,6 +625,22 @@ Drie dingen die hierin niet mogen wegvallen:
 `gh run watch` staat er niet voor de netheid: het is het moment om te zien dat
 CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 
+### Wat er vóór de eerste release klaar moet zijn
+
+Nagelopen in fase 5, tegen de broncode van HACS. Alles wat hieronder **niet**
+staat, is er al.
+
+| | Blokkeert installatie? |
+|---|---|
+| `version` in `manifest.json` op het releasenummer zetten | ja — HACS vergelijkt de tag met deze waarde |
+| Beschrijving en topics op de GitHub-repo | nee (alleen de HACS-action) |
+| De HACS-action in CI zetten | nee — pas zinvol bij aanvraag voor de HACS-winkel |
+
+De repo is **nu** installeerbaar als custom repository: HACS' overige controles
+(licentie, brands, beschrijving, topics) draaien uitsluitend in hun eigen action,
+en die draait alleen bij opname in de standaardwinkel. Zie
+`docs/fase-5/RAPPORT.md` voor de vindplaatsen.
+
 ---
 
 ## Projectstand
@@ -642,7 +658,8 @@ CI groen is vóórdat er een release aan de tag hangt die een klant binnenhaalt.
 | 3c-bis | De URI-controle vervalt (SPEC 11.2 herschreven, 11.2.1 vervallen, 11.2.2 met een nieuw criterium). De SomaFM-wekker die in 3c niet afging, gaat nu af met 0 van 87 s stilte. 212 tests, 5 mutaties. `play_media` blokkeert 2,1–2,6 s en dat is niet weg te nemen zonder de foutdetectie te verliezen (`core.py:2953-2959`) | gemerged |
 | 4a | De kaart in rusttoestand en de stoptoestand: lijst, schakelaar, overloopmenu, bevestiging bij verwijderen, melding met "Begrepen", en de kaart die één stopknop wordt. Twee pure modules (`weergave.js`, `kaartconfig.js`), de config-editor met `ha-form`. Een **tiende commando** `alarms/clear_message` erbij, want SPEC 11.7 vroeg een knop die SPEC 15 niet kon bedienen; SPEC 15.10/15.11 bijgewerkt met toestemming van de eigenaar. 40 JS- en 216 Python-tests, 28 mutaties (2 gaten gevonden) | gemerged |
 | 4b | De editor (SPEC 5) achter de plusknop en achter een tik op een rij, met zoeken in MA, de zomertijdwaarschuwing en de voorbeeldknop. `ringing/subscribe` verbreed tot `updates/subscribe` met een `changed`-bericht uit de opslaglaag — daarmee is het openstaande punt van 4a gesloten. `preview/start` als abonnement, zodat een weggeklikt tabblad het geluid stopt (gemeten: 8,8 s). 69 JS- en 238 Python-tests, 31 mutaties in twee rondes | gemerged |
-| **4c** | **De twee openstaande SPEC-punten van 4b gedicht: `sound/search` geeft per treffer `endless` (op dezelfde providerlijst als het afvuren) en `entities/list` geeft `filtered_out`, waarmee de drie situaties van SPEC 7.4 onderscheidbaar zijn. Het zoekveld past nu op een telefoon: placeholder "Zoek media", knop een vergrootglas. 77 JS- en 264 Python-tests, 23 mutaties in twee rondes** | **deze ronde, PR #11** |
+| 4c | De twee openstaande SPEC-punten van 4b gedicht: `sound/search` geeft per treffer `endless` (op dezelfde providerlijst als het afvuren) en `entities/list` geeft `filtered_out`, waarmee de drie situaties van SPEC 7.4 onderscheidbaar zijn. Het zoekveld past nu op een telefoon: placeholder "Zoek media", knop een vergrootglas. 77 JS- en 264 Python-tests, 23 mutaties in twee rondes | gemerged |
+| **5** | **HACS-klaar: `manifest.json` en `hacs.json` geverifieerd tegen hassfest én HACS' eigen schema's (beide echt gedraaid, met negatieve controle), README herschreven voor de klant, en de installatie bewezen op een verse HA op 8130 waar de integratie als **kopie** in staat zoals HACS hem levert. Geen functionele wijziging** | **deze ronde, PR #12** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee

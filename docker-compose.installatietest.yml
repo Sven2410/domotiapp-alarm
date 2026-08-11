@@ -1,0 +1,30 @@
+# Een VERSE Home Assistant om de installatie op te toetsen (fase 5).
+#
+# Het verschil met `docker-compose.yml` is niet de poort maar de manier waarop de
+# integratie erin komt: hier staat géén bind mount naar `custom_components/`.
+# De integratie wordt er als **kopie** in gezet, precies zoals HACS hem uit de
+# zipball pakt. Dat is het verschil tussen "werkt bij ons" en "werkt bij de klant":
+# een bind mount verbergt een ontbrekend bestand, een kopie niet.
+#
+# `name:` staat er expliciet in. Zonder die regel ziet Docker Compose meerdere
+# compose-bestanden in dezelfde mapstructuur als één project en vervangt het de
+# verkeerde container (CLAUDE.md, Omgeving).
+#
+# Opzetten:
+#   docker compose -f docker-compose.installatietest.yml up -d
+# Opruimen:
+#   docker compose -f docker-compose.installatietest.yml down -v
+#   rm -rf .ha-install-config
+
+name: domotiapp-alarm-installatietest
+
+services:
+  homeassistant:
+    container_name: ha-alarm-install
+    image: ghcr.io/home-assistant/home-assistant:2026.8
+    restart: "no"
+    ports:
+      # 8123 t/m 8129 zijn bezet door andere projecten; 8130 is van deze test.
+      - "8130:8123"
+    volumes:
+      - ./.ha-install-config:/config

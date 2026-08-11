@@ -1,5 +1,6 @@
 # Home Assistant testinstance (config van de dev-container)
 .ha-dev-config/
+.ha-install-config/
 
 # Music Assistant-server (testmateriaal, fase 0b)
 .ma-dev-config/
