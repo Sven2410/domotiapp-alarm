@@ -37,13 +37,39 @@ LIGHT_DOMAIN = "light"
 
 @dataclass(slots=True)
 class Selectie:
-    """Wat `entities/list` per soort teruggeeft (SPEC 15.7)."""
+    """Wat `entities/list` per soort teruggeeft (SPEC 15.7).
+
+    **`filtered_out` is nieuw in fase 4c**, en het bestaat om precies één reden: de
+    drie situaties uit SPEC 7.4 uit elkaar houden. Met alleen `label_exists` en
+    `entities` zijn er drie situaties en twee signalen:
+
+    | Situatie (SPEC 7.4) | `label_exists` | `entities` | `filtered_out` |
+    |---|---|---|---|
+    | het label bestaat niet | `False` | leeg | 0 |
+    | het label bestaat, er hangt niets aan | `True` | leeg | **0** |
+    | er hing wel iets aan, maar het viel af op 7.2 | `True` | leeg | **> 0** |
+
+    De onderste twee zijn voor de eigenaar heel verschillende meldingen — *"zet het
+    label op je speakers"* tegenover *"die speakers zijn geen Music
+    Assistant-speakers"* — en zonder deze teller kiest de kaart er één en heeft hij
+    het in de helft van de gevallen mis.
+
+    Het is bewust een **getal** en geen lijst met redenen: de melding uit SPEC 7.4
+    is één zin die alle afvalredenen samenvat, en de redenen zelf staan al per
+    entiteit op `DEBUG` in het log. Een lijst zou de kaart uitnodigen er zelf
+    zinnen van te maken.
+    """
 
     label_exists: bool
     entities: list[dict[str, str]] = field(default_factory=list)
+    filtered_out: int = 0
 
     def as_dict(self) -> dict:
-        return {"label_exists": self.label_exists, "entities": self.entities}
+        return {
+            "label_exists": self.label_exists,
+            "entities": self.entities,
+            "filtered_out": self.filtered_out,
+        }
 
 
 def _label_id(hass: HomeAssistant, naam: str) -> str | None:
@@ -158,15 +184,20 @@ def speakers(hass: HomeAssistant) -> Selectie:
 
     registry = er.async_get(hass)
     gevonden: list[dict[str, str]] = []
+    afgevallen = 0
     for entity_id in sorted(_entiteiten_met_label(hass, label_id)):
         geschikt, reden = is_ma_speaker(hass, entity_id)
         if not geschikt:
+            # De reden blijft op DEBUG staan en gaat niet mee naar de kaart: de
+            # melding van SPEC 7.4 vat ze samen in één zin, en wie de details wil
+            # heeft er een logregel per entiteit voor.
             _LOGGER.debug("Speaker %s valt af: %s", entity_id, reden)
+            afgevallen += 1
             continue
         gevonden.append(
             {"entity_id": entity_id, "name": _naam(hass, entity_id, registry.async_get(entity_id))}
         )
-    return Selectie(label_exists=True, entities=gevonden)
+    return Selectie(label_exists=True, entities=gevonden, filtered_out=afgevallen)
 
 
 def is_wekkerlamp(hass: HomeAssistant, entity_id: str) -> tuple[bool, str | None]:
@@ -192,9 +223,18 @@ def lampen(hass: HomeAssistant) -> Selectie:
         return Selectie(label_exists=False)
 
     registry = er.async_get(hass)
-    gevonden = [
-        {"entity_id": entity_id, "name": _naam(hass, entity_id, registry.async_get(entity_id))}
-        for entity_id in sorted(_entiteiten_met_label(hass, label_id))
-        if entity_id.startswith(f"{LIGHT_DOMAIN}.")
-    ]
-    return Selectie(label_exists=True, entities=gevonden)
+    gevonden: list[dict[str, str]] = []
+    afgevallen = 0
+    for entity_id in sorted(_entiteiten_met_label(hass, label_id)):
+        if not entity_id.startswith(f"{LIGHT_DOMAIN}."):
+            # Voor de lamp is de enige eis het domein (SPEC 12): er is geen eis aan
+            # `supported_color_modes`, want de wake-up light gebruikt alleen
+            # `brightness_pct`. Toch wordt er geteld, zodat de editor ook hier de
+            # twee lege gevallen uit elkaar houdt.
+            _LOGGER.debug("Lamp %s valt af: zit niet in het %s-domein", entity_id, LIGHT_DOMAIN)
+            afgevallen += 1
+            continue
+        gevonden.append(
+            {"entity_id": entity_id, "name": _naam(hass, entity_id, registry.async_get(entity_id))}
+        )
+    return Selectie(label_exists=True, entities=gevonden, filtered_out=afgevallen)

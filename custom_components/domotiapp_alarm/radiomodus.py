@@ -32,7 +32,7 @@ is de garantie.
 
 from __future__ import annotations
 
-from .const import SIMILAR_TRACKS_PROVIDERS
+from .const import ONEINDIGE_SOORTEN, SIMILAR_TRACKS_PROVIDERS
 
 # Het scheidingsteken tussen provider en pad in een MA-URI: `somafm://radio/…`.
 _SCHEMA_SCHEIDING = "://"
@@ -59,6 +59,35 @@ def provider_van(uri: str | None) -> str | None:
         return None
     domein, _, _ = kop.partition(_INSTANTIE_SCHEIDING)
     return domein.lower() or None
+
+
+def blijft_doorspelen(uri: str | None, media_type: str | None) -> bool:
+    """Blijft dit geluid eindeloos doorspelen (SPEC 8.3.1 en 15.6)?
+
+    Dit is het veld dat `sound/search` per treffer teruggeeft. Het bestaat omdat de
+    **kaart** de vraag niet kan beantwoorden: de providerlijst staat hier, en hem
+    ook in de kaart zetten zou de tweede implementatie opleveren die dit product
+    overal vermijdt. De kaart interpreteert niets — hij toont de waarschuwing uit
+    SPEC 8.3 wanneer dit `False` is, en anders niet.
+
+    Twee onafhankelijke redenen om `True` te zijn, en ze staan bewust in deze
+    volgorde:
+
+    1. **De soort houdt uit zichzelf niet op.** Radio en een afspeellijst hebben een
+       onbepaalde duur (SPEC 8.3), en dat geldt ongeacht de provider. Een
+       radiostation van een provider zonder `SIMILAR_TRACKS` speelt net zo goed door.
+    2. **`radio_mode` gaat mee.** Dan speelt Music Assistant na het gekozen item
+       eindeloos door in dezelfde stijl, en is ook een los nummer een bruikbare
+       wekker.
+
+    Dezelfde bron als `stuur_radio_mode_mee`, en dat is geen toeval: zou hier een
+    tweede lijst staan, dan kan de editor "dit speelt door" beloven terwijl het
+    afvuren `radio_mode` weglaat. Fase 3a-bis legde vast dat die lijst **stil** kan
+    verouderen; één lijst betekent dat hij ook maar op één plek fout kan staan.
+    """
+    if isinstance(media_type, str) and media_type.strip().lower() in ONEINDIGE_SOORTEN:
+        return True
+    return stuur_radio_mode_mee(uri)
 
 
 def stuur_radio_mode_mee(uri: str | None) -> bool:
