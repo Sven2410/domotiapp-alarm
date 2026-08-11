@@ -12,6 +12,7 @@ registry-entry-ID gebeurt server-side (SPEC 6.2).
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -24,7 +25,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
-from . import abonnement, afvuren, entiteiten, planner, radiomodus, voorbeeld
+from . import abonnement, afvuren, entiteiten, planner, radiomodus, voorbeeld, volgende
 from .const import (
     DATA_STORE,
     DATA_WS_REGISTERED,
@@ -239,6 +240,49 @@ async def _handle_save(hass, connection, msg) -> None:
 # --- 15.3 alarms/set_enabled -------------------------------------------
 
 
+def _one_shot_bij_aanzetten(
+    hass, store, registry_id: str, alarm_id: str
+) -> dict[str, Any]:
+    """Een verlopen eenmalige wekker krijgt bij het aanzetten een nieuw moment.
+
+    Sinds fase 6 zet een eenmalige wekker zichzelf uit zodra zijn moment verbruikt is
+    (SPEC 14.5). De schakelaar is daarmee de enige knop die hem weer tot leven kan
+    wekken, en zonder deze berekening zou dat een schakelaar zijn die niets doet:
+    `one_shot_at` ligt in het verleden, de planner plant hem niet (SPEC 13.1 rem 1),
+    en de kaart toont "geen volgende keer" bij een wekker die aan staat.
+
+    **Alleen als het moment verstreken is**, en dat is geen voorzichtigheid maar
+    noodzaak. Opnieuw berekenen terwijl het moment nog in de toekomst ligt kan de
+    wekker naar **vroeger** halen: staat een wekker van 06:45 op morgen en zet de
+    klant hem om 05:00 uit en weer aan, dan geeft `eerstvolgende_keer_dat_tijd_
+    voorbijkomt` vandaag 06:45. Een wekker die anderhalf uur later afgaat dan de
+    klant zag, is erger dan de knop die we repareren.
+
+    Een herhalende wekker heeft geen `one_shot_at` (SPEC 14.2) en komt hier niet
+    voorbij: die pakt zijn volgende dag vanzelf op.
+    """
+    wekker = store.wekker(registry_id, alarm_id)
+    if wekker is None or not volgende.is_eenmalig(wekker):
+        return {}
+
+    nu = dt_util.now()
+    rauw = wekker.get("one_shot_at")
+    if rauw:
+        try:
+            if dt.datetime.fromisoformat(rauw) > nu:
+                return {}
+        except ValueError:
+            # Onleesbaar in de opslag. Dan is opnieuw berekenen juist de reparatie:
+            # een moment dat niemand kan lezen plant ook niemand.
+            _LOGGER.warning(
+                "Wekker %s heeft een onleesbare one_shot_at (%r); opnieuw berekend",
+                alarm_id,
+                rauw,
+            )
+
+    return {"one_shot_at": eerstvolgende_keer_dat_tijd_voorbijkomt(nu, wekker["time"]).isoformat()}
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): TYPE_SET_ENABLED,
@@ -251,12 +295,15 @@ async def _handle_save(hass, connection, msg) -> None:
 @_fout_omzetten
 async def _handle_set_enabled(hass, connection, msg) -> None:
     registry_id = registry_id_van_person(hass, msg["person"])
+    store = _store(hass)
     velden: dict[str, Any] = {"enabled": msg["enabled"]}
     # Een wekker uitzetten wist skip_next: uit-en-weer-aan is de manier waarop
     # iemand "vergeet het maar" intrekt (SPEC 15.3).
     if not msg["enabled"]:
         velden["skip_next"] = False
-    bijgewerkt = await _store(hass).async_werk_velden_bij(registry_id, msg["alarm_id"], velden)
+    else:
+        velden.update(_one_shot_bij_aanzetten(hass, store, registry_id, msg["alarm_id"]))
+    bijgewerkt = await store.async_werk_velden_bij(registry_id, msg["alarm_id"], velden)
     if bijgewerkt is None:
         raise PersonNietGevonden(f"wekker {msg['alarm_id']} bestaat niet bij {msg['person']}")
     await planner.async_herplan(hass)

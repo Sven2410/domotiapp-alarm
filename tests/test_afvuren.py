@@ -22,6 +22,7 @@ sprongen bestond (valkuil 31).
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -265,6 +266,107 @@ async def test_de_stoptimer_en_de_tweede_noodrem_worden_gezet(
 
 
 # =======================================================================
+# 1b. Shuffle (SPEC 9.6) — de bevinding uit productie op 1.0.0
+# =======================================================================
+
+
+def afspeellijst() -> dict[str, Any]:
+    """Een wekker met een afspeellijst in plaats van een radiostream."""
+    return volledige_wekker(
+        sound={
+            "uri": "library://playlist/12",
+            "name": "Ochtend",
+            "media_type": "playlist",
+            "image": None,
+        }
+    )
+
+
+async def test_een_afspeellijst_wordt_geschud_voordat_hij_start(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. De bevinding zelf: elke ochtend hetzelfde eerste nummer.
+
+    De assertie is niet "shuffle_set is aangeroepen" maar de **index** ervan, en dat
+    is de hele bevinding. Music Assistant past shuffle toe op het moment dat de queue
+    geladen wordt (`controllers/player_queues.py:1533` in 2.9.11:
+    `shuffle = queue.shuffle_enabled and len(queue_items) > 1 and not radio_mode`).
+    Een `shuffle_set` ná `play_media` schudt alleen de nummers ná het eerste, en dan
+    begint de wekker nog steeds elke ochtend hetzelfde.
+
+    Dezelfde vorm als `test_de_acht_stappen...`: een aanroep die er is maar te laat,
+    is geen reparatie.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage, afspeellijst())
+
+    await vuur(hass, registry_id)
+
+    namen = huis.namen()
+    assert "media_player.shuffle_set" in namen, namen
+    assert namen.index("media_player.shuffle_set") < namen.index(
+        "music_assistant.play_media"
+    ), namen
+
+    data = dict(huis.aanroepen)["media_player.shuffle_set"]
+    assert data["shuffle"] is True
+    assert data["entity_id"] == huis.speaker
+
+
+async def test_radio_wordt_niet_geschud(hass: HomeAssistant, hass_storage: dict) -> None:
+    """REGRESSIEWACHT, en de **positieve controle** bij de test hierboven.
+
+    Gemeten: deze slaagt op de code van vóór deze ronde, en dat is geen verwijt maar
+    de definitie — daar wordt nergens geschud. Zijn waarde ligt aan de andere kant:
+    zonder deze test slaagt een implementatie die **altijd** shuffelt, en die is niet
+    onschuldig. Het is een service-aanroep vlak vóór het geluid, op een speler waar
+    het begrip niet bestaat: radio is één doorlopende stream.
+
+    De standaardwekker uit `volledige_wekker()` is een SomaFM-stream, dus dit is
+    tegelijk de bewaking dat de bestaande tests hier geen aanroep bij krijgen.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage)
+
+    await vuur(hass, registry_id)
+
+    assert "media_player.shuffle_set" not in huis.namen()
+    assert "music_assistant.play_media" in huis.namen()
+
+
+async def test_een_mislukte_shuffle_houdt_de_wekker_niet_tegen(
+    hass: HomeAssistant, hass_storage: dict, caplog
+) -> None:
+    """NIEUW GEDRAG. Shuffle is een verbetering van de wekker, niet de wekker.
+
+    Dit is dezelfde afweging als valkuil 41: een speler die `shuffle_set` niet
+    aankan mag geen stille ochtend opleveren. Het faalgeval is "de wekker begon bij
+    nummer 1", en dat is wat er vóór deze ronde élke ochtend gebeurde.
+
+    **De eerste assertie is er om de val van "de setup faalt niet" te vermijden.**
+    Zonder die regel slaagt deze test op de oude code omdat daar helemaal geen
+    `shuffle_set` wordt aangeroepen en er dus ook niets kan mislukken — een
+    triviale waarheid, precies wat de werkafspraak verbiedt. Met die regel toetst de
+    test wat hij belooft: de aanroep is gedáán, hij is mislukt, en de wekker ging
+    door.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage, afspeellijst())
+    huis.faal.add("media_player.shuffle_set")
+
+    with caplog.at_level(logging.WARNING, logger="custom_components.domotiapp_alarm.afvuren"):
+        await vuur(hass, registry_id)
+
+    assert "media_player.shuffle_set" in huis.namen(), "er is niets misgegaan om op te toetsen"
+    assert "music_assistant.play_media" in huis.namen()
+    assert abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+    assert bericht(hass, registry_id) is None
+    # De waarschuwing is het bewijs dat de fout ons **bereikt** heeft. Zonder deze
+    # regel overleeft een `blocking=False` op de shuffle-aanroep de test: HA vangt de
+    # exceptie dan zelf af (valkuil 42), onze `except` draait nooit, en niemand komt
+    # er ooit achter dat de speaker geen shuffle aankan. Gemeten in de mutatieproef
+    # van fase 6 (M19).
+    assert "Shuffle aanzetten" in caplog.text, caplog.text
+
+
+# =======================================================================
 # 2. De noodrem vooraf (SPEC 11.1), en dat er GEEN URI-controle meer is
 # =======================================================================
 
@@ -470,6 +572,94 @@ async def test_een_mislukt_afspelen_meldt_het_geluid_en_niet_de_speaker(
     assert melding["severity"] == "error"
     assert "SomaFM: Beat Blender" in melding["text"]
     assert not abonnement.register_van(hass).is_afgaand(registry_id, ALARM_ID)
+
+
+async def test_de_melding_beweert_niet_dat_het_geluid_weg_is(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. Bevinding 2 uit productie op 1.0.0.
+
+    De melding luidde: *"het gekozen geluid 'NF 🎈' bestaat niet meer. Kies een nieuw
+    geluid."* Het geluid bestond wél; Spotify was in Music Assistant niet
+    geautoriseerd. De eigenaar heeft een half uur naar de verkeerde kant gekeken.
+
+    Wat de code op dit punt **weet** is dat `play_media` heeft geweigerd. Meer niet.
+    Deze test legt allebei de kanten vast: de bewering die eruit moet, en de
+    vaststelling die erin hoort.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage)
+    huis.faal.add("music_assistant.play_media")
+
+    await vuur(hass, registry_id)
+
+    tekst = bericht(hass, registry_id)["text"]
+    assert "bestaat niet meer" not in tekst, tekst
+    assert "kon niet gestart worden" in tekst, tekst
+
+
+async def test_de_reden_van_music_assistant_gaat_mee_in_de_melding(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. De reden van de dienst is het enige dat naar de oorzaak wijst.
+
+    In productie was dat letterlijk `"No playable items found"` — de zin die de
+    eigenaar naar de niet-geautoriseerde Spotify-koppeling had geleid.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage)
+    huis.faalreden["music_assistant.play_media"] = "No playable items found"
+    huis.faal.add("music_assistant.play_media")
+
+    await vuur(hass, registry_id)
+
+    tekst = bericht(hass, registry_id)["text"]
+    assert "No playable items found" in tekst, tekst
+
+
+async def test_zonder_reden_staat_er_geen_lege_toevoeging(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG, en de **positieve controle** bij de test hierboven.
+
+    Een implementatie die de reden altijd invoegt komt langs die test heen en levert
+    hier `"Music Assistant meldde: ."` op. Een exceptie zonder tekst bestaat: HA gooit
+    er zelf een paar, en dan hoort de melding er niet minder verzorgd uit te zien.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage)
+    huis.faalreden["music_assistant.play_media"] = ""
+    huis.faal.add("music_assistant.play_media")
+
+    await vuur(hass, registry_id)
+
+    tekst = bericht(hass, registry_id)["text"]
+    assert "Music Assistant meldde" not in tekst, tekst
+    assert "kon niet gestart worden" in tekst, tekst
+
+
+async def test_alleen_de_eerste_regel_van_de_reden_komt_op_de_kaart(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. Een melding is één regel in een kaart, geen logvenster.
+
+    Wat HA teruggeeft als een fout van de MA-server doorkomt, is niet altijd één zin:
+    de mededeling staat vooraan en daarachter kan een brok context staan. Dat hele
+    blok in `last_message.text` zetten maakt de kaart onleesbaar — en `last_message`
+    staat in de **opslag**, dus het blijft daar staan tot iemand op "Begrepen" drukt.
+
+    Gemeten in de mutatieproef van fase 6 (M20): zonder deze test overleeft een
+    implementatie die de hele tekst doorgeeft.
+    """
+    registry_id, huis = await zet_op(hass, hass_storage)
+    huis.faalreden["music_assistant.play_media"] = (
+        "No playable items found\nTraceback (most recent call last):\n  File ..."
+    )
+    huis.faal.add("music_assistant.play_media")
+
+    await vuur(hass, registry_id)
+
+    tekst = bericht(hass, registry_id)["text"]
+    assert "No playable items found" in tekst, tekst
+    assert "Traceback" not in tekst, tekst
+    assert "\n" not in tekst, tekst
 
 
 # =======================================================================
@@ -1165,6 +1355,65 @@ async def test_last_fired_wordt_ook_bij_een_noodremfout_gezet(
 
     opgeslagen = hass.data[DOMAIN][DATA_STORE].wekker(registry_id, ALARM_ID)
     assert opgeslagen["last_fired"] == MOMENT.isoformat()
+
+
+async def test_een_eenmalige_wekker_zet_zichzelf_uit_na_het_afgaan(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. Bevinding 3 uit productie op 1.0.0.
+
+    SPEC 14.5 eist dit sinds fase 2, en **niets in de code deed het**. De eigenaar zag
+    de schakelaar 's ochtends nog aan staan bij een wekker die nooit meer iets zou
+    doen: `one_shot_at` ligt in het verleden, dus de planner plant hem niet (rem 1).
+    Een schakelaar die aan staat bij een dode wekker liegt op dezelfde manier als de
+    melding uit bevinding 2.
+    """
+    eenmalig = volledige_wekker(days=[], one_shot_at=MOMENT.isoformat())
+    registry_id, _ = await zet_op(hass, hass_storage, eenmalig)
+
+    await vuur(hass, registry_id)
+
+    opgeslagen = hass.data[DOMAIN][DATA_STORE].wekker(registry_id, ALARM_ID)
+    assert opgeslagen["enabled"] is False
+    assert opgeslagen["last_fired"] == MOMENT.isoformat()
+
+
+async def test_een_herhalende_wekker_blijft_aan_staan(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """REGRESSIEWACHT bij de test hierboven, en hij is niet triviaal.
+
+    De mutatie die hier tegen beschermt is het weglaten van de `is_eenmalig`-vraag:
+    dan zet élke wekker zichzelf na één ochtend uit, en dat is een veel ergere
+    bevinding dan die we repareren. Slaagt op de oude code — daarom REGRESSIEWACHT —
+    maar zonder deze test is de reparatie een vrijbrief.
+    """
+    registry_id, _ = await zet_op(hass, hass_storage)  # days=[1..5]
+
+    await vuur(hass, registry_id)
+
+    opgeslagen = hass.data[DOMAIN][DATA_STORE].wekker(registry_id, ALARM_ID)
+    assert opgeslagen["enabled"] is True
+
+
+async def test_een_eenmalige_wekker_die_niet_afgaat_gaat_ook_uit(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """NIEUW GEDRAG. Hetzelfde als hierboven, maar dan bij een noodremfout.
+
+    Het moment is verbruikt zodra `last_fired` gezet is — dat is de keuze uit
+    `test_last_fired_wordt_ook_bij_een_noodremfout_gezet`, en `enabled` hoort er in
+    dezelfde stap 0 mee omlaag. Zou dat alleen bij een geslaagde wekker gebeuren, dan
+    is de uitkomst dubbel onaangenaam: de wekker ging niet af én de schakelaar
+    suggereert dat hij dat morgen alsnog doet.
+    """
+    eenmalig = volledige_wekker(days=[], one_shot_at=MOMENT.isoformat())
+    registry_id, _ = await zet_op(hass, hass_storage, eenmalig, beschikbaar=False)
+
+    await vuur(hass, registry_id)
+
+    opgeslagen = hass.data[DOMAIN][DATA_STORE].wekker(registry_id, ALARM_ID)
+    assert opgeslagen["enabled"] is False
 
 
 async def test_unload_stopt_een_afgaande_wekker(

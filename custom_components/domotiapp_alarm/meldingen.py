@@ -42,6 +42,10 @@ _LOGGER = logging.getLogger(__name__)
 
 KIND_SPEAKER_UNAVAILABLE = "speaker_unavailable"
 KIND_MA_UNAVAILABLE = "ma_unavailable"
+# De naam blijft `sound_gone` — hij staat in de opslag van elke klant die 1.0.0
+# draaide en de kaart vergelijkt erop (SPEC 14.2.1). De **tekst** is in fase 6
+# gewijzigd omdat hij loog: hij beweerde dat het geluid niet meer bestond, terwijl
+# de code alleen weet dat het starten mislukte. Zie `tekst_voor`.
 KIND_SOUND_GONE = "sound_gone"
 KIND_SPEAKER_LOST_DURING_PLAY = "speaker_lost_during_play"
 KIND_LIGHT_FAILED = "light_failed"
@@ -94,9 +98,14 @@ def tekst_voor(kind: str, wekker: dict[str, Any], **extra: str) -> str:
     if kind == KIND_MA_UNAVAILABLE:
         return f"De wekker van {tijd} is niet afgegaan: Music Assistant was niet bereikbaar."
     if kind == KIND_SOUND_GONE:
+        # De reden die MA meegaf, tussen haakjes achter de vaststelling. Ontbreekt
+        # hij, dan staat er niets — geen leeg haakje en geen verzonnen oorzaak.
+        reden = (extra.get("ma_reden") or "").strip()
+        erbij = f' Music Assistant meldde: "{reden}".' if reden else ""
         return (
-            f"De wekker van {tijd} is niet afgegaan: het gekozen geluid '{geluid}' "
-            "bestaat niet meer. Kies een nieuw geluid."
+            f"De wekker van {tijd} is niet afgegaan: het geluid '{geluid}' kon niet "
+            f"gestart worden.{erbij} Controleer het geluid in Music Assistant, of "
+            "kies een ander."
         )
     if kind == KIND_SPEAKER_LOST_DURING_PLAY:
         return (

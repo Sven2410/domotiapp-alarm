@@ -115,6 +115,14 @@ SIMILAR_TRACKS_PROVIDERS: Final[frozenset[str]] = frozenset(
 # een wekker passen".
 ONEINDIGE_SOORTEN: Final[frozenset[str]] = frozenset({"radio", "playlist"})
 
+# Mediasoorten die uit meerdere nummers bestaan (SPEC 9.6). Daar staat shuffle
+# altijd aan, zodat een wekker niet elke ochtend met hetzelfde nummer begint.
+#
+# Let op het verschil met ONEINDIGE_SOORTEN hierboven: dat gaat over DUUR, dit
+# over AANTAL. `radio` is oneindig maar heeft één stream; `album` is eindig maar
+# heeft meerdere nummers. Ze overlappen alleen in `playlist`.
+MEERSTUKS_SOORTEN: Final[frozenset[str]] = frozenset({"playlist", "album", "artist"})
+
 # --- Standaardwaarden voor een nieuwe wekker (SPEC 14.3) ----------------
 DEFAULT_TIME: Final = "07:00"
 DEFAULT_VOLUME_PCT: Final = 40

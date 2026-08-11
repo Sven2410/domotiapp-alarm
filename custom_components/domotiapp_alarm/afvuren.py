@@ -3,22 +3,28 @@
 De planner (`planner.py`) bepaalt **wanneer**; deze module bepaalt **wat**. Die
 scheiding is van fase 3b en is in fase 3c niet aangeraakt: de planner is af.
 
-## De acht stappen, in deze volgorde (SPEC 9.1 plus 9.5)
+## De negen stappen, in deze volgorde (SPEC 9.1 plus 9.5 en 9.6)
 
 | # | Stap | Waarom hier |
 |---|---|---|
-| 0 | `last_fired` bijwerken | vóór álles wat geluid kan maken — zie hieronder |
+| 0 | `last_fired` bijwerken, en `enabled: false` bij een eenmalige | vóór álles wat geluid kan maken — zie hieronder |
 | 1 | noodrem vooraf | SPEC 11.1 — alleen `available`; de URI-controle is vervallen |
 | 2 | huidig volume **lezen** | SPEC 9.5: vóór stap 3, want daarna is het weg |
-| 3 | volume op **0** | vóór stap 5, anders is er één harde uitbarsting |
+| 3 | volume op **0** | vóór stap 6, anders is er één harde uitbarsting |
 | 4 | wake-up light aan | SPEC 12, als ingesteld |
-| 5 | geluid starten | `music_assistant.play_media` |
-| 6 | volume-oploop | 20 stappen van 1 s naar het ingestelde niveau |
-| 7 | noodrem achteraf | 5 s ná stap 5 (SPEC 11.3) |
-| 8 | stoptimer | 30 minuten (SPEC 9.4) |
+| 5 | shuffle aan | SPEC 9.6 — vóór stap 6, want MA schudt bij het laden van de queue |
+| 6 | geluid starten | `music_assistant.play_media` |
+| 7 | volume-oploop | 20 stappen van 1 s naar het ingestelde niveau |
+| 8 | noodrem achteraf | 5 s ná stap 6 (SPEC 11.3) |
+| 9 | stoptimer | 30 minuten (SPEC 9.4) |
 
-SPEC 9.1 nummert zeven stappen; stap 2 hierboven is het lezen dat SPEC 9.5
+SPEC 9.1 nummert acht stappen; stap 2 hierboven is het lezen dat SPEC 9.5
 uitdrukkelijk **vóór** stap 2 van 9.1 plaatst. Zelfde volgorde, één stap explicieter.
+
+**Stap 5 vóór stap 6 heeft dezelfde vorm als stap 3 vóór stap 6, en dezelfde
+strekking:** wat de queue bepaalt moet er zijn vóórdat de queue bestaat. Zet je
+shuffle erna, dan is het eerste nummer al gekozen — en dat is precies de klacht die
+in productie op 1.0.0 boven kwam. Zie `shuffle.py` voor de regel in MA's broncode.
 
 **Stap 3 vóór stap 5 is de essentie.** Start je het geluid op het oude volume en zet
 je het daarna op 0, dan knalt de wekker één keer hard voordat de oploop begint. Dat is
@@ -66,7 +72,15 @@ from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
 
-from . import abonnement, meldingen, noodrem, oploop as oploop_mod, radiomodus
+from . import (
+    abonnement,
+    meldingen,
+    noodrem,
+    oploop as oploop_mod,
+    radiomodus,
+    shuffle,
+    volgende,
+)
 from .const import (
     DATA_STORE,
     DOMAIN,
@@ -95,6 +109,25 @@ CTX_UNSUB_STOP = "unsub_stop"
 # =======================================================================
 
 
+def velden_bij_verbruikt_moment(
+    wekker: dict[str, Any], moment: dt.datetime
+) -> dict[str, Any]:
+    """Wat er in de opslag verandert zodra een moment verbruikt is (SPEC 14.5).
+
+    Eén functie, gebruikt door het afvuren én door het overslaan in `planner.py`,
+    want dat zijn de twee plekken waar een moment opgaat. Zonder die ene plek
+    krijgt de ene route wel een uitgezette eenmalige wekker en de andere niet.
+
+    `last_fired` houdt het **bedoelde** moment vast en niet "nu" (fase 3b, regel
+    2). `enabled` gaat alleen omlaag bij een eenmalige wekker: een herhalende
+    wekker gaat morgen gewoon weer af.
+    """
+    velden: dict[str, Any] = {"last_fired": moment.isoformat()}
+    if volgende.is_eenmalig(wekker):
+        velden["enabled"] = False
+    return velden
+
+
 async def async_laat_afgaan(
     hass: HomeAssistant,
     registry_id: str,
@@ -116,9 +149,16 @@ async def async_laat_afgaan(
     speaker = wekker.get("speaker") or ""
 
     # --- stap 0: last_fired, vóór alles wat geluid kan maken ------------
+    #
+    # En bij een eenmalige wekker gaat `enabled` hier op `False` (SPEC 14.5). Dat
+    # hoort hier en niet aan het eind, om dezelfde reden als `last_fired`: op dit
+    # moment is het ene moment van deze wekker **verbruikt**, ongeacht of het
+    # geluid daarna lukt. `one_shot_at` ligt vanaf nu in het verleden, dus hij kan
+    # nooit meer afgaan — en een schakelaar die dan nog aan staat, belooft iets
+    # wat niet meer komt. Dat is precies wat er in productie op 1.0.0 misging.
     try:
         await store.async_werk_velden_bij(
-            registry_id, alarm_id, {"last_fired": moment.isoformat()}
+            registry_id, alarm_id, velden_bij_verbruikt_moment(wekker, moment)
         )
     except Exception:  # noqa: BLE001 - zie docstring
         _LOGGER.exception(
@@ -172,27 +212,33 @@ async def async_laat_afgaan(
     # --- stap 4: wake-up light (SPEC 12) -------------------------------
     await _async_lamp_aan(hass, registry_id, person_entity_id, wekker)
 
-    # --- stap 5: geluid starten ----------------------------------------
-    if not await _async_start_geluid(hass, speaker, wekker.get("sound") or {}):
+    # --- stap 5: shuffle, vóór het geluid (SPEC 9.6) -------------------
+    # Music Assistant past shuffle toe op het moment dat de queue geladen wordt.
+    # Ná `play_media` is het eerste nummer al gekozen en schud je alleen de rest —
+    # dan begint de wekker elke ochtend hetzelfde. Zie `shuffle.py`.
+    await async_zet_shuffle(hass, speaker, (wekker.get("sound") or {}).get("media_type"))
+
+    # --- stap 6: geluid starten ----------------------------------------
+    gelukt, ma_reden = await _async_start_geluid(hass, speaker, wekker.get("sound") or {})
+    if not gelukt:
         _LOGGER.warning(
-            "Wekker %s gaat NIET af: het afspelen van %r op %s is mislukt",
+            "Wekker %s gaat NIET af: het afspelen van %r op %s is mislukt (%s)",
             alarm_id,
             (wekker.get("sound") or {}).get("uri"),
             speaker,
+            ma_reden or "geen reden opgegeven",
         )
         # `sound_gone` en niet `speaker_unavailable`: de speaker is een paar
         # milliseconden eerder nog beschikbaar bevonden (stap 1), dus "de speaker was niet
-        # bereikbaar" zou onwaar zijn tegen de klant. Wat er dan overblijft is het geluid,
-        # en `sound_gone` geeft ook de handeling die helpt — "Kies een nieuw geluid".
+        # bereikbaar" zou onwaar zijn tegen de klant.
         #
-        # Deze soort werd tot fase 3c-bis door de URI-controle gestuurd. Nu die vervallen
-        # is, is dít de enige plek die hem stuurt, en dat is geen hergebruik uit
-        # verlegenheid: de aanroep die het geluid werkelijk zou starten heeft geweigerd,
-        # en dat is een sterker signaal dan een zoekopdracht ooit was.
-        #
-        # De tekst van SPEC 11.7 stelt het zekerder dan wij het weten ("bestaat niet
-        # meer" terwijl we alleen weten dat het niet startte). Dat is gemeld in
-        # docs/fase-3c/RAPPORT-BIS.md; SPEC is er niet voor gewijzigd.
+        # **De tekst zegt sinds fase 6 wat er is vastgesteld en niet wat we vermoeden.**
+        # Tot dan luidde hij "het gekozen geluid bestaat niet meer", en in productie
+        # stuurde dat de eigenaar de verkeerde kant op: het geluid bestond wél, maar
+        # Spotify was in MA niet geautoriseerd en gaf "No playable items found". Wat de
+        # code weet is dat het **starten** mislukte; de reden van MA gaat mee, want die
+        # is voor de eigenaar bruikbaar en voor een klant nog altijd beter dan een
+        # onjuiste bewering. Zie SPEC 11.7.
         #
         # De lamp is hierboven al aangegaan als hij was ingesteld — dat is precies wat
         # SPEC 11.6 punt 2 voorschrijft, en hij hoort niet weer uit.
@@ -203,6 +249,7 @@ async def async_laat_afgaan(
             wekker,
             meldingen.KIND_SOUND_GONE,
             lamp_al_gedaan=True,
+            ma_reden=ma_reden or "",
         )
         return
 
@@ -229,7 +276,7 @@ async def async_laat_afgaan(
         }
     )
 
-    # --- stap 6: de volume-oploop (SPEC 9.3) ---------------------------
+    # --- stap 7: de volume-oploop (SPEC 9.3) ---------------------------
     if oploop_kan:
         loop = _Oploop(hass, registry_id, alarm_id, speaker, doel_pct)
         context[CTX_OPLOOP] = loop
@@ -239,14 +286,14 @@ async def async_laat_afgaan(
             hass, store, registry_id, wekker, meldingen.KIND_VOLUME_RAMP_UNAVAILABLE
         )
 
-    # --- stap 7: noodrem achteraf, 5 s later (SPEC 11.3) ---------------
+    # --- stap 8: noodrem achteraf, 5 s later (SPEC 11.3) ---------------
     context[CTX_UNSUB_NOODREM] = async_call_later(
         hass,
         NOODREM_NA_SECONDEN,
         _maak_noodrem_achteraf(hass, registry_id, person_entity_id, wekker),
     )
 
-    # --- stap 8: de stoptimer (SPEC 9.4) -------------------------------
+    # --- stap 9: de stoptimer (SPEC 9.4) -------------------------------
     context[CTX_UNSUB_STOP] = async_call_later(
         hass,
         STOP_NA_MINUTEN * 60,
@@ -270,6 +317,7 @@ async def _async_faal(
     wekker: dict[str, Any],
     kind: str,
     lamp_al_gedaan: bool = False,
+    ma_reden: str = "",
 ) -> None:
     """De wekker gaat niet af (SPEC 11.6). Gooit nooit.
 
@@ -284,12 +332,18 @@ async def _async_faal(
 
     De wekker komt **niet** in het ringing-register: er is niets om te stoppen. De lamp
     blijft aan en de klant zet hem zelf uit, net als na een gewone wekker (SPEC 12).
+
+    `ma_reden` is de tekst die Music Assistant meegaf. Alleen `sound_gone` gebruikt
+    hem; de andere soorten negeren hem stil, want `meldingen.tekst_voor` neemt
+    `**extra` en kijkt per soort wat hij nodig heeft.
     """
     store = hass.data[DOMAIN][DATA_STORE]
     if not lamp_al_gedaan:
         await _async_lamp_aan(hass, registry_id, person_entity_id, wekker)
 
-    message = await meldingen.async_meld(hass, store, registry_id, wekker, kind)
+    message = await meldingen.async_meld(
+        hass, store, registry_id, wekker, kind, ma_reden=ma_reden
+    )
 
     abonnement.register_van(hass).stuur(
         {
@@ -307,9 +361,36 @@ async def _async_faal(
 # =======================================================================
 
 
+async def async_zet_shuffle(
+    hass: HomeAssistant, speaker: str, media_type: str | None
+) -> None:
+    """Zet shuffle aan als het geluid meerdere nummers heeft (SPEC 9.6).
+
+    Gooit nooit. Shuffle is een verbetering van de wekker en niet de wekker zelf:
+    lukt de aanroep niet, dan begint hij bij het eerste nummer — hinderlijk, maar
+    geen stille wekker. Daarom wordt de uitkomst niet eens teruggegeven.
+    """
+    if not shuffle.moet_shuffelen(media_type):
+        return
+    try:
+        await hass.services.async_call(
+            "media_player",
+            "shuffle_set",
+            {ATTR_ENTITY_ID: speaker, "shuffle": True},
+            blocking=True,
+        )
+    except Exception as fout:  # noqa: BLE001 - zie docstring
+        _LOGGER.warning(
+            "Shuffle aanzetten op %s is mislukt (%s); de wekker begint bij het "
+            "eerste nummer",
+            speaker,
+            fout,
+        )
+
+
 async def _async_start_geluid(
     hass: HomeAssistant, speaker: str, geluid: dict[str, Any]
-) -> bool:
+) -> tuple[bool, str | None]:
     """`music_assistant.play_media`, met de voorwaardelijke `radio_mode` (SPEC 8.3.1).
 
     **De terugval is de garantie, niet de lijst.** `SIMILAR_TRACKS_PROVIDERS` kan stil
@@ -324,17 +405,26 @@ async def _async_start_geluid(
         zonder radio_mode : HTTP 200, queue items=1
         met    radio_mode : HTTP 500, queue items=0, state=idle
 
-    Geeft terug of er iets is gestart.
+    Geeft `(gelukt, reden)` terug. `reden` is de tekst die **Music Assistant zelf**
+    meegaf bij de laatste poging, of `None` als er niets bruikbaars was. Die reden
+    gaat mee in de melding: in productie op 1.0.0 was hij "No playable items found"
+    (Spotify niet geautoriseerd in MA), terwijl de melding beweerde dat het geluid
+    niet meer bestond. De reden van de dienst is het enige dat de klant of de
+    eigenaar naar de werkelijke oorzaak wijst — zie SPEC 11.7 en `meldingen.py`.
+
+    De reden van de **eerste** poging (mét `radio_mode`) wordt bewust niet bewaard:
+    die is meestal `UnsupportedFeaturedException`, en dat is een mededeling over
+    onze eigen providerlijst en niet over het geluid.
     """
     uri = geluid.get("uri")
     if not uri:
         _LOGGER.warning("Geen URI om af te spelen op %s", speaker)
-        return False
+        return False, None
 
     if radiomodus.stuur_radio_mode_mee(uri):
         try:
             await _async_play(hass, speaker, uri, radio_mode=True)
-            return True
+            return True, None
         except Exception as fout:  # noqa: BLE001 - zie docstring
             _LOGGER.warning(
                 "Afspelen van %s mét radio_mode is mislukt (%s); opnieuw zonder. "
@@ -349,8 +439,27 @@ async def _async_start_geluid(
         await _async_play(hass, speaker, uri, radio_mode=False)
     except Exception as fout:  # noqa: BLE001 - een mislukte wekker is geen crash
         _LOGGER.error("Afspelen van %s op %s is mislukt: %s", uri, speaker, fout)
-        return False
-    return True
+        return False, _reden_van(fout)
+    return True, None
+
+
+def _reden_van(fout: BaseException) -> str | None:
+    """De tekst van een exceptie, geschikt om aan een klant te tonen.
+
+    Wat MA teruggeeft is niet altijd een zin. `str(fout)` kan leeg zijn (een
+    exceptie zonder argumenten), of een meerregelige brok met een stacktrace erin
+    wanneer HA de fout van de MA-server doorgeeft. Beide zijn onbruikbaar in een
+    melding die op één regel in een kaart staat, dus:
+
+    - leeg of alleen witruimte → `None`, en de melding laat het deel over de reden
+      dan weg. Liever geen reden dan een lege haakjesuitdrukking;
+    - alleen de **eerste** regel, want daar staat bij MA de mededeling zelf
+      ("No playable items found"), en wat erna komt is context voor een log.
+    """
+    tekst = str(fout).strip()
+    if not tekst:
+        return None
+    return tekst.splitlines()[0].strip() or None
 
 
 async def _async_play(

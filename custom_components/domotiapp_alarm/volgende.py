@@ -214,6 +214,17 @@ def dagen_tekst(dagen: list[int] | tuple[int, ...]) -> str:
     return " ".join(_DAGEN_KORT[d - 1] for d in sorted(set(dagen)))
 
 
+def is_eenmalig(wekker: dict) -> bool:
+    """Gaat deze wekker één keer af (SPEC 14.2: lege `days`)?
+
+    Staat hier omdat deze module de eenmalige wekker al kent — `one_shot_at` en
+    de lege `days` komen hieronder terug in `volgend_moment_van_wekker`. Eén
+    definitie, zodat het afvuren, het overslaan en `set_enabled` niet elk hun
+    eigen versie van "eenmalig" krijgen.
+    """
+    return not (wekker.get("days") or [])
+
+
 def volgend_moment_van_wekker(wekker: dict, nu: dt.datetime) -> dt.datetime | None:
     """Het eerstvolgende moment van één wekker, of `None`.
 

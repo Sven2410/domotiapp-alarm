@@ -770,14 +770,19 @@ Op de wektijd, in deze volgorde:
    speaker beschikbaar, en is de URI geldig?
 2. **Volume op 0** zetten op de speaker.
 3. **Wake-up light aan**, als die is ingesteld ([sectie 12](#12-de-wake-up-light)).
-4. **Geluid starten** via `music_assistant.play_media`.
-5. **Volume-oploop** starten: van 0 naar het ingestelde niveau in 20 seconden.
-6. **Noodrem achteraf** ([sectie 11.3](#113-een-paar-seconden-ná-het-starten)) —
+4. **Shuffle aanzetten**, als het geluid uit meerdere nummers bestaat
+   ([9.6](#96-shuffle-bij-media-met-meerdere-nummers)).
+5. **Geluid starten** via `music_assistant.play_media`.
+6. **Volume-oploop** starten: van 0 naar het ingestelde niveau in 20 seconden.
+7. **Noodrem achteraf** ([sectie 11.3](#113-een-paar-seconden-ná-het-starten)) —
    een paar seconden later opnieuw controleren.
-7. **Stoptimer** van 30 minuten zetten.
+8. **Stoptimer** van 30 minuten zetten.
 
-Stap 2 vóór stap 4 is essentieel: start je het geluid op het oude volume en zet
+Stap 2 vóór stap 5 is essentieel: start je het geluid op het oude volume en zet
 je het daarna op 0, dan is er één harde uitbarsting voordat de oploop begint.
+
+Stap 4 vóór stap 5 heeft dezelfde vorm en dezelfde reden: wat de queue bepaalt
+moet er zijn vóórdat de queue bestaat. Zie [9.6](#96-shuffle-bij-media-met-meerdere-nummers).
 
 **Transition-loos** — er is geen fade-in van het geluid zelf, alleen de
 volume-oploop. MA's eigen `fade_in` is niet aanroepbaar; zie
@@ -858,6 +863,57 @@ Het volume wordt gelezen **vóór** stap 2 van [9.1](#91-de-volgorde). Lukt dat
 niet — de speaker is onbereikbaar en dan is `volume_level` er niet, want state
 attributes verdwijnen bij `unavailable` — dan wordt er **niets** teruggezet en
 wordt dat op `DEBUG` gelogd. Nooit een verzonnen waarde terugzetten.
+
+### 9.6 Shuffle bij media met meerdere nummers
+
+**Shuffle staat altijd aan wanneer het gekozen geluid uit meerdere nummers
+bestaat.** Er is geen instelling voor en geen veld in de opslag: het is gedrag,
+net als de volume-oploop.
+
+| `media_type` | meerdere nummers | shuffle |
+|---|---|---|
+| `playlist`, `album`, `artist` | ja | **aan** |
+| `radio` | nee — één doorlopende stream | uit |
+| `track`, `podcast`, `audiobook` | nee — één item | uit |
+
+Bij een onbekende of ontbrekende soort: **niet** shuffelen.
+
+**Waarom dit er is.** Een wekker met een afspeellijst begon elke ochtend met
+hetzelfde nummer. Voor een wekker verliest dat zijn werking: het geluid dat je
+moet wekken wordt het geluid dat je niet meer hoort. Gevonden in productie op
+1.0.0.
+
+**Waarom het vóór het afspelen gebeurt, en niet erna.** **GEMETEN** in de
+broncode van Music Assistant 2.9.11 (`controllers/player_queues.py:1533`):
+
+```python
+shuffle = queue.shuffle_enabled and len(queue_items) > 1 and not radio_mode
+```
+
+MA past shuffle toe **op het moment dat de queue geladen wordt**, op basis van
+`shuffle_enabled` zoals dat dán staat. Een `shuffle_set` ná `play_media` schudt
+alleen de nummers ná het eerste — de wekker begint dan nog steeds elke ochtend
+hetzelfde. Daarom staat het als stap 4 in [9.1](#91-de-volgorde).
+
+**Hoe.** `media_player.shuffle_set` op de speaker.
+`music_assistant.play_media` heeft geen shuffle-veld.
+
+**Wat er gebeurt als die aanroep faalt:** niets bijzonders. Er wordt op `WARNING`
+gelogd en de wekker gaat gewoon door. Shuffle is een verbetering van de wekker en
+niet de wekker zelf; het faalgeval is "hij begon bij nummer 1", en dat is precies
+de toestand van vóór deze regel. Een noodrem die een stille ochtend kan
+veroorzaken zou hier niet in verhouding staan
+([11.5](#115-volledige-zekerheid-bestaat-niet)).
+
+**Het voorbeeld schudt mee** ([5.4](#54-de-voorbeeldknop)). Een voorbeeld dat
+altijd met nummer 1 begint terwijl de wekker schudt, laat iets anders horen dan
+wat er 's ochtends gebeurt.
+
+**Twee dingen die MA zelf al goed doet**, en die de integratie dus niet hoeft na
+te bouwen: een queue met één item wordt nooit geschud (`len(queue_items) > 1`),
+en een radio-queue laat MA met opzet ongeschud (`not radio_mode`). De tabel
+hierboven is daarmee een verfijning en geen noodzaak — hij bestaat zodat er niet
+onnodig een service wordt aangeroepen en zodat de bedoeling leesbaar is.
 
 ---
 
@@ -1188,7 +1244,7 @@ Teksten bij `severity: "error"`:
 |---|---|
 | `speaker_unavailable` | **"De wekker van 06:45 is niet afgegaan: de speaker 'Slaapkamer' was niet bereikbaar."** |
 | `ma_unavailable` | **"De wekker van 06:45 is niet afgegaan: Music Assistant was niet bereikbaar."** |
-| `sound_gone` | **"De wekker van 06:45 is niet afgegaan: het gekozen geluid 'Beat Blender' bestaat niet meer. Kies een nieuw geluid."** |
+| `sound_gone` | **"De wekker van 06:45 is niet afgegaan: het geluid 'Beat Blender' kon niet gestart worden. Music Assistant meldde: "No playable items found". Controleer het geluid in Music Assistant, of kies een ander."** — het middelste deel staat er alleen als MA een reden meegaf; zie hieronder |
 | `speaker_lost_during_play` | **"De wekker van 06:45 is mogelijk niet hoorbaar geweest: de speaker 'Slaapkamer' viel weg tijdens het spelen."** |
 | `light_failed` | **"De wekker is afgegaan, maar de lamp 'Bedlamp' kon niet aangezet worden."** |
 | `volume_ramp_unavailable` | **"De wekker is afgegaan op het ingestelde volume; het oplopende volume was op deze speaker niet mogelijk."** |
@@ -1203,6 +1259,25 @@ Teksten bij `severity: "notice"`:
 De eerste is de tekst die de eigenaar heeft vastgelegd, en de reden dat deze hele
 categorie bestaat: dat is precies wat iemand wil weten die zich heeft
 verslapen. Het is geen storing en het moet er ook niet als een storing uitzien.
+
+**Een melding zegt alleen wat er is vastgesteld.** Dat is een regel over álle
+teksten hierboven en niet alleen over `sound_gone`. Een melding die de oorzaak
+verzint stuurt de klant — of de eigenaar — de verkeerde kant op, en dat kost meer
+tijd dan geen melding.
+
+De tekst bij `sound_gone` is in fase 6 om die reden herschreven. Hij luidde *"het
+gekozen geluid 'X' bestaat niet meer. Kies een nieuw geluid."*, en in productie
+op 1.0.0 bestond het geluid gewoon: Spotify was in Music Assistant niet
+geautoriseerd en gaf `"No playable items found"`. Wat de integratie op dat punt
+weet, is dat `play_media` heeft geweigerd — meer niet. De naam `sound_gone`
+blijft ongewijzigd, want die staat in de opslag van elke klant die 1.0.0 draaide
+en de kaart vergelijkt erop ([14.2.1](#142-het-schema)); alleen de tekst is
+veranderd.
+
+**De reden van Music Assistant gaat mee als die er is.** Ontbreekt hij, dan
+vervalt dat deel van de zin — geen leeg citaat en geen verzonnen oorzaak. Van de
+teruggegeven fout wordt alleen de **eerste regel** gebruikt: MA zet de mededeling
+daar, en wat erna komt is context voor een log en niet voor een kaart.
 
 **b) Een `persistent_notification`.** Die verschijnt in HA's eigen meldingenlijst
 en overleeft dat niemand de kaart opent. De klant krijgt hem weg met HA's eigen
@@ -1582,6 +1657,27 @@ zonder alles opnieuw in te vullen. Automatisch verwijderen is een onomkeerbare
 handeling die het product nergens anders heeft. De kaart toont zo'n wekker als
 **"Eenmalig — afgelopen"**.
 
+**"Na afgaan" is ruimer dan "na geluid".** Het moment is verbruikt zodra
+`last_fired` erop staat, en dat gebeurt op drie manieren:
+
+| Wat er gebeurde | `enabled` daarna |
+|---|---|
+| de wekker ging af | `false` |
+| de noodrem hield hem tegen ([11.6](#116-bij-falen)) | `false` |
+| het moment werd overgeslagen ([13.4](#134-het-respijtvenster-30-minuten)) | `false` |
+
+Anders is de uitkomst dubbel onaangenaam: de wekker ging niet af én de
+schakelaar suggereert dat hij dat morgen alsnog doet, terwijl `one_shot_at` in
+het verleden ligt en de planner hem niet meer oppakt
+([13.1](#131-welke-planner-waarvoor)).
+
+**Opnieuw aanzetten geeft een nieuw moment.** Dat is geen eigenschap van de
+opslag maar van het commando; zie
+[15.3](#153-domotiapp_alarmalarmsset_enabled).
+
+*Verduidelijkt in fase 6. Deze sectie stond er sinds fase 2, maar de implementatie
+zette `enabled` nooit om — gevonden in productie op 1.0.0.*
+
 ### 14.6 Schemaversie en migratie
 
 - **`minor_version` omhoog** bij een wijziging die oude data zonder aanpassing
@@ -1712,6 +1808,31 @@ volledig geldige wekker eist, wat een half ingevulde rij niet is.
 
 **VOORSTEL:** een wekker uitzetten **wist `skip_next`**. Uit-en-weer-aan is de
 manier waarop iemand "vergeet het maar" intrekt.
+
+**Een verlopen eenmalige wekker aanzetten geeft hem een nieuw moment.** Zet
+`enabled` op `true` bij een wekker met lege `days` waarvan de `one_shot_at` is
+verstreken, dan berekent de server een nieuwe `one_shot_at`: **de eerstvolgende
+keer dat de ingestelde `time` voorbijkomt**, met dezelfde rekenkunde als
+[15.2](#152-domotiapp_alarmalarmssave).
+
+Zonder dit is de schakelaar een knop die niets doet. Sinds
+[14.5](#145-wat-er-met-een-afgegane-eenmalige-wekker-gebeurt) zet een eenmalige
+wekker zichzelf uit zodra zijn moment op is, en dan is deze schakelaar de enige
+manier om hem terug te halen — terwijl `one_shot_at` in het verleden ligt, de
+planner hem niet plant ([13.1](#131-welke-planner-waarvoor)) en de kaart "geen
+volgende keer" toont bij een wekker die aan staat.
+
+**Alleen als het moment verstreken is**, en dat is geen voorzichtigheid maar
+noodzaak. Opnieuw rekenen terwijl het moment nog in de toekomst ligt kan de wekker
+naar **vroeger** halen: staat een wekker van 06:45 op morgen en zet de klant hem
+om 05:00 uit en weer aan, dan is de eerstvolgende 06:45 vandaag. Een wekker die
+anderhalf uur later afgaat dan de klant zag, is erger dan de knop die hiermee
+gerepareerd wordt.
+
+Een **herhalende** wekker raakt dit niet: die heeft geen `one_shot_at`
+([14.2](#142-het-schema)) en pakt zijn volgende dag vanzelf op.
+
+*Toegevoegd in fase 6, op verzoek van de eigenaar.*
 
 ### 15.4 `domotiapp_alarm/alarms/delete`
 
