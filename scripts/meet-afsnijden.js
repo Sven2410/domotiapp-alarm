@@ -45,7 +45,7 @@ function beschrijf(el) {
 
 /**
  * @param {Window} win  het venster waarin HA draait
- * @returns {{kaart, popup, onderzocht, buitenKaart, buitenPopup, tekstLooptUit, geknepen}}
+ * @returns {{kaart, popup, onderzocht, buitenKaart, buitenPopup, tekstLooptUit, teBreed, geknepen}}
  */
 export function meet(win) {
   const d = win.document;
@@ -116,6 +116,49 @@ export function meet(win) {
     })
     .filter((x) => x.voorbijKaart > TOLERANTIE);
 
+  // TE BREED GETEKEND — de getekende breedte tegen de beschikbare breedte, per
+  // element, in plaats van de POSITIE tegen de kaart.
+  //
+  // Waarom dit er los naast staat. De drie controles hierboven kijken allemaal
+  // naar waar iets UITKOMT, en dat betekent dat ze het pas zien als het aan de
+  // buitenkant zichtbaar wordt. Een element dat 26 px te breed is maar binnen een
+  // ouder met ruimte staat, valt nergens buiten en blijft dus onzichtbaar — tot
+  // een andere engine er nét iets anders mee omgaat.
+  //
+  // Fase 10 kwam hierop uit doordat iOS `box-sizing: border-box` NIET toepast op
+  // `input[type="time"]`: `width: 100%` gold daar voor de contentbox, en onze
+  // padding en rand kwamen er bovenop. Gemeten op de telefoon van de eigenaar:
+  // 324 px beschikbaar, 348,9 px getekend. Op Chrome was datzelfde veld 324 px en
+  // viel er niets te vinden — de fout is per engine anders, de OORZAAK niet.
+  //
+  // Deze controle meet de oorzaak: past de borderbox van het kind in de contentbox
+  // van zijn ouder? Zo nee, dan is het element te breed getekend, ongeacht welke
+  // engine het uiteindelijk waar afknipt.
+  const teBreed = [];
+  for (const e of elementen) {
+    const ouder = e.parentElement || (e.getRootNode() && e.getRootNode().host);
+    if (!ouder || ouder === kaart) continue;
+    const st = win.getComputedStyle(e);
+    // Absoluut/vast gepositioneerde kinderen en negatieve marges mogen breder
+    // zijn dan hun ouder; dat is een keuze en geen fout.
+    if (st.position === "absolute" || st.position === "fixed") continue;
+    if (parseFloat(st.marginLeft) < 0 || parseFloat(st.marginRight) < 0) continue;
+    const os = win.getComputedStyle(ouder);
+    const beschikbaar =
+      ouder.clientWidth - parseFloat(os.paddingLeft) - parseFloat(os.paddingRight);
+    const getekend = e.getBoundingClientRect().width;
+    if (beschikbaar > 0 && getekend > beschikbaar + TOLERANTIE) {
+      teBreed.push({
+        el: beschrijf(e),
+        getekend: Math.round(getekend * 10) / 10,
+        beschikbaar: Math.round(beschikbaar * 10) / 10,
+        teveel: Math.round((getekend - beschikbaar) * 10) / 10,
+        boxSizing: st.boxSizing,
+        breedteRegel: st.width,
+      });
+    }
+  }
+
   // Platgeknepen invoervelden: die lopen nergens over, dus ze staan in geen van
   // beide lijsten. Fase 8 vond zo een zoekveld van 27 px.
   const geknepen = elementen
@@ -130,6 +173,7 @@ export function meet(win) {
     buitenKaart,
     buitenPopup,
     tekstLooptUit,
+    teBreed,
     geknepen,
   };
 }
