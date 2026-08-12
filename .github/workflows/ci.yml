@@ -41,6 +41,13 @@ jobs:
       - name: Registratieregel
         run: npm run check:registratie
 
+      # Bewaakt dat een native formuliercontrol met width 100% een EIGEN
+      # achtergrondkleur houdt. Fase 10 zette hem op transparent, en het
+      # uitklappaneel van een select viel daardoor terug op wit: een release lang
+      # onleesbare dropdowns in een donker thema. Zie scripts/check-controls.mjs.
+      - name: Opmaak van de formuliercontrols
+        run: npm run check:controls
+
       - name: Toon het verschil bij een mislukking
         if: failure()
         run: |

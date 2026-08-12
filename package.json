@@ -7,7 +7,8 @@
     "build": "node scripts/build.mjs",
     "verify": "node scripts/build.mjs --check",
     "test": "node --test \"tests/js/**/*.test.mjs\"",
-    "check:registratie": "node scripts/check-registratie.mjs"
+    "check:registratie": "node scripts/check-registratie.mjs",
+    "check:controls": "node scripts/check-controls.mjs"
   },
   "dependencies": {
     "lit": "3.3.1"

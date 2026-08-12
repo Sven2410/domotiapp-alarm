@@ -911,11 +911,47 @@ Vindplaatsen in `docs/fase-11/RAPPORT.md`.
     `docker-compose.installatietest.yml` op poort 8130, met de integratie als
     **kopie** en niet als bind mount.
 
+### Nieuw in fase 12
+
+Vindplaats in `docs/fase-12/RAPPORT.md`.
+
+75. **Het uitklappaneel van een `select` wordt getekend met de
+    `background-color` van de select ZELF, en dat paneel valt buiten je shadow
+    root.** Zet je die op `transparent` — wat voor een `input` prima is, want het
+    vak eronder levert de achtergrond — dan valt het paneel terug op wit. Met de
+    lichte tekst van een donker thema is de lijst dan **onleesbaar**, en alleen
+    de gemarkeerde regel blijft zichtbaar omdat de browser daar zijn eigen balk
+    overheen tekent.
+
+    Gemeten op 1.1.0, bij alle drie de dropdowns tegelijk:
+    `background-color: rgba(0, 0, 0, 0)` met `color: rgb(225, 225, 225)`.
+
+    Dit is fase 10 (valkuil 70) die één stap te ver is doorgevoerd: padding en
+    rand horen op het vak, **een achtergrondkleur hoort op de control** zodra die
+    control een paneel heeft dat je niet kunt bereiken. Geef daarom
+    `select` en `option` een eigen, opake achtergrond, en het gemarkeerde item
+    een eigen markering (`option:checked`) — anders valt die terug op de
+    aanname van het platform dat er donkere tekst op een lichte balk komt.
+
+    **En het viel een hele release lang niet op**, omdat geen enkele meting de
+    dropdown ooit had **uitgeklapt**. Dat is valkuil 61 in een nieuwe vorm: niet
+    een klikvolgorde die een toestand mist, maar een control waarvan alleen de
+    dichte staat ooit is bekeken. `npm run check:controls` bewaakt het nu in CI —
+    zwakker dan een meting, maar het is de enige bescherming die automatisch kan
+    draaien.
+
+    Bijvangst voor het meten: **het uitgeklapte paneel is niet te
+    screenshotten.** Chrome tekent het als een venster van het besturingssysteem
+    en de browsertool legt alleen de pagina vast. Wil je het tóch laten zien, zet
+    dan tijdelijk `size` op de select: dan rendert de engine dezelfde optie-rijen
+    ín de pagina, met dezelfde regels. Meld dat het een probe was.
+
 ```bash
 npm install                # eenmalig
 npm run build              # bundelt src/ -> custom_components/.../frontend/
 npm run verify             # faalt als de gecommitte bundel afwijkt van de bron
 npm run check:registratie  # bewaakt de registratieregel (valkuil 1)
+npm run check:controls     # bewaakt de opmaak van de formuliercontrols (valkuil 75)
 npm test                   # JS-unittests (node --test), geen jsdom
 ```
 
@@ -1021,7 +1057,8 @@ en die draait alleen bij opname in de standaardwinkel. Zie
 | 8 | **Twee bevindingen uit een bubble card op de telefoon. (1) Afsnijden: de knoppenrij liep 67 px buiten de kaart en het zoekveld werd tot 27 px platgeknepen — `scrollWidth` vond geen van beide (valkuil 63). Voetregel en zoekrij wikkelen nu, en kaart én editor passen zich met een **benoemde** container query aan hun eigen breedte aan (valkuil 64). Gemeten bij 244 px: 0 van de 57 elementen valt nog buiten de kaart. (2) Het voorbeeld zet nu ook de wake-up light aan en zet hem bij het stoppen terug, met dezelfde drie regels als het volume (SPEC 5.4 en 12). Live: `uit → 100 % → uit` en `128 → 255 → 128`. 327 Python- en 85 JS-tests, 14 mutaties in twee rondes (2 gaten gedicht, 1 regel geschrapt als onbereikbaar)** | gemerged, 1.0.2 |
 | 9 | **Bubble Card v3.2.5 op de testinstance en een view `/fase-4a/bubble-echt` met een échte pop-up — de conditie waarin de klant hem gebruikt, en die drie rondes lang niet gemeten was. Daarin gevonden wat `grid_options` niet liet zien: de knop "Verwijderen" van de verwijderbevestiging stak bij een wekker met een lange naam **27 px buiten de kaart en 9 px buiten de pop-up** op 390 px — een deel van de knop van een onomkeerbare handeling was niet aan te wijzen. Fase 8 miste het omdat die meting de bevestiging nooit opende. `.onderrij` wikkelt nu. Ná: 0 buiten kaart én pop-up in vier toestanden over zes breedtes (kaart 394 → 208 px), en de container queries van fase 8 vuren aantoonbaar in de pop-up. **Het tijdveld is opnieuw niet gereproduceerd** — 320 px beschikbaar tegen 129 px nodig; er staan twee vragen open bij de eigenaar. De meetopstelling is vastgelegd (`scripts/telefoon.html`, `scripts/meet-afsnijden.js`, `scripts/bubble-meetopstelling.md`) en is nu werkafspraak. 327 Python- en 85 JS-tests (geen nieuwe: de fout is opmaak), 11 mutaties in twee rondes (1 regel geschrapt, 1 controle aan de meetfunctie toegevoegd)** | gemerged, 1.0.3 |
 | 10 | **De bevinding van de eigenaar op 1.0.3 uitgezocht uit twee screenshots, pixelmatig opgemeten: **iOS past `box-sizing: border-box` niet toe op `input[type="time"]`**, dus `width: 100%` gold voor de contentbox en onze padding en rand kwamen erbovenop — 324 px beschikbaar, 348,9 px getekend, ~9 px voorbij de kaartrand afgeknipt. Niet de cijfers werden afgekapt maar het **veld**. De hele kaart is op dat patroon nagelopen (zeven controls) en de reparatie neemt de klasse weg in plaats van het geval: rand, radius, achtergrond en padding naar een `div.vak`, de control zelf `padding: 0; border: 0`. Plus `text-align: center`, en `box-sizing` expliciet op `.treffer` en `.stopknop` in plaats van leunen op de UA. Bijvangst: de **zoekresultatenlijst** was nooit gemeten en liep bij 208 px 16 px buiten de kaart. `meet-afsnijden.js` heeft een vierde controle (getekend tegen beschikbaar). 327 Python- en 85 JS-tests (weer geen nieuwe), 12 mutaties in twee rondes — M1/M2/M3 bewijzen de diagnose, 1 regel geschrapt** | gemerged, 1.0.4 |
-| **11** | **De afronding. (1) **Valkuil 62 rechtgezet en de echte oorzaak gevonden**: HA zet de import van een extra module letterlijk in het HTML-document, en dát document wordt met StaleWhileRevalidate gecachet — dus stond de hash in iets wat zelf verouderde. Gereproduceerd op een verse instance: na een update van 1.0.2 naar 1.0.4 draaide de browser 1.0.2 en werd de nieuwe URL niet één keer opgevraagd. Opgelost met een **stabiele lader** op `/api/domotiapp_alarm/loader.js`, de enige route die HA's service worker nooit cachet. Ná: een gewone herlaadbeurt levert de nieuwe bundel, zonder de app af te sluiten. Beide laadroutes opnieuw aangetoond. (2) De **updatetest** op 8130 is nu een vaste rig. (3) De volume-oploop **haalt in** en is op +20 s klaar zoals SPEC 9.3 zegt. (4) Drie meldingen die reachability claimden herschreven. (5) README, projectstand en `docs/AANPAK.md`. 346 Python- en 85 JS-tests, 15 mutaties in twee rondes (1 gat gedicht, 1 regel geschrapt, 1 equivalente mutant verantwoord)** | **deze ronde, PR** |
+| 11 | **De afronding. (1) **Valkuil 62 rechtgezet en de echte oorzaak gevonden**: HA zet de import van een extra module letterlijk in het HTML-document, en dát document wordt met StaleWhileRevalidate gecachet — dus stond de hash in iets wat zelf verouderde. Gereproduceerd op een verse instance: na een update van 1.0.2 naar 1.0.4 draaide de browser 1.0.2 en werd de nieuwe URL niet één keer opgevraagd. Opgelost met een **stabiele lader** op `/api/domotiapp_alarm/loader.js`, de enige route die HA's service worker nooit cachet. Ná: een gewone herlaadbeurt levert de nieuwe bundel, zonder de app af te sluiten. Beide laadroutes opnieuw aangetoond. (2) De **updatetest** op 8130 is nu een vaste rig. (3) De volume-oploop **haalt in** en is op +20 s klaar zoals SPEC 9.3 zegt. (4) Drie meldingen die reachability claimden herschreven. (5) README, projectstand en `docs/AANPAK.md`. 346 Python- en 85 JS-tests, 15 mutaties in twee rondes (1 gat gedicht, 1 regel geschrapt, 1 equivalente mutant verantwoord)** | gemerged, 1.1.0 |
+| **12** | **De uitgeklapte dropdowns waren wit geworden. Oorzaak nagemeten en niet aangenomen: fase 10 zette `background: transparent` op de control, en de browser tekent het uitklappaneel van een `select` met de achtergrondkleur van de select zelf — transparant betekent daar "val terug op wit". Gemeten op 1.1.0 bij **alle drie** de dropdowns: `rgba(0,0,0,0)` met tekst `rgb(225,225,225)`. Select en opties krijgen nu een opake achtergrond uit het thema en het gemarkeerde item de accentkleur. Ná: contrast **13 : 1** gewoon en **5,5 : 1** gemarkeerd (AA vraagt 4,5), in de Bubble Card-conditie, over zes breedtes 0 buiten kaart en pop-up, en fase 10 aantoonbaar intact (padding 0, marges 17/17). De native `select` is bewust behouden — de regressie was van ons, en op mobiel is de systeemkiezer beter dan een eigen lijst. Nieuwe bewaker `npm run check:controls` in CI, die faalt op 1.1.0. 346 Python- en 86 JS-tests (geen nieuwe: de fout is opmaak), 9 mutaties in twee rondes (8 gevangen, 1 mutatie zelf fout)** | **deze ronde, PR** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -1336,6 +1373,16 @@ En één ding om te onthouden over dit bestand zelf: **valkuil 62 was tien fases
 lang fout** en heeft in die tijd het onderzoek naar de echte oorzaak
 tegengehouden. Dat hij te vinden was, komt doordat er een meting bij stond. Zie
 `docs/AANPAK.md` §3.2.
+
+**Wat er staat na fase 12:** de drie dropdowns in de editor zijn weer leesbaar,
+in de kleuren van het thema van de klant, met het gekozen item op de accentkleur.
+De native `select` is behouden — de fout was van ons en niet van de control.
+
+**De regel van fase 12 die je niet mag omdraaien:** een control met een paneel dat
+je niet kunt bereiken, houdt zijn eigen achtergrondkleur. Padding en rand horen op
+het vak (valkuil 70), **kleur hoort op de control** (valkuil 75). En: als een
+control een open en een dichte staat heeft, meet ze allebei — deze fout heeft een
+hele release geleefd omdat elke meting alleen naar de dichte staat keek.
 
 ### Waar de volgende fase begint
 
