@@ -32,6 +32,7 @@ from custom_components.domotiapp_alarm.const import (
     DATA_RESOURCE_ID,
     DOMAIN,
     HASH_LENGTE,
+    LOADER_URL_PATH,
 )
 
 from .conftest import (
@@ -65,44 +66,173 @@ async def test_statisch_pad_geregistreerd(hass: HomeAssistant, opgezet) -> None:
     assert CARD_URL_PATH in paden, f"{CARD_URL_PATH} niet gevonden in {paden}"
 
 
-async def test_index_import_heeft_bundelhash(hass: HomeAssistant, opgezet) -> None:
-    """De ?v= is de hash van het bundelbestand, niet het versienummer.
+async def test_index_importeert_de_lader_en_niet_de_bundel(
+    hass: HomeAssistant, opgezet
+) -> None:
+    """In index.html staat de stabiele lader, niet de gehashte bundel-URL.
 
-    NIEUW GEDRAG, mechanisch onderbouwd: de verwachte hash wordt hier opnieuw
-    uit het bestand berekend. Een implementatie die het versienummer in de ?v=
-    zet, faalt hier — en dat is precies de vergissing die een verouderde bundel
-    in de browsercache laat staan.
+    NIEUW GEDRAG (fase 11) en de kern van die ronde. HA zet de import letterlijk
+    in het HTML-document, en dat document wordt door de service worker gecachet;
+    staat de hash erin, dan levert een gecacht document na een update de oude
+    bundel op. Dat is op een verse instance gereproduceerd, zie
+    docs/fase-11/RAPPORT.md.
+
+    Faalt op de code van vóór fase 11: daar stond de gehashte URL hier.
     """
-    urls = hass.data[DATA_EXTRA_MODULE_URL]
-    verwacht = verwachte_url()
+    urls = hass.data[DATA_EXTRA_MODULE_URL].urls
 
-    assert verwacht in urls.urls, f"{verwacht} niet in {urls.urls}"
+    assert LOADER_URL_PATH in urls, f"{LOADER_URL_PATH} niet in {urls}"
 
-    # En de hash is echt die van de bytes op schijf.
+    # En de gehashte URL staat er juist NIET meer in.
+    assert verwachte_url() not in urls
+
+    # Geen enkele URL van ons in index.html mag nog een ?v= dragen: dat is
+    # precies wat een verouderd document zou bevriezen.
+    onze = [u for u in urls if DOMAIN in u]
+    assert onze == [LOADER_URL_PATH]
+    assert "?v=" not in LOADER_URL_PATH
+
+
+async def test_de_lader_staat_onder_api(hass: HomeAssistant, opgezet) -> None:
+    """Het /api/-voorvoegsel is dragend en geen smaak.
+
+    REGRESSIEWACHT, en bewust zo gelabeld: deze test kijkt alleen naar de
+    constante, dus hij slaagt ook op de code van vóór fase 11 zodra die constante
+    bestaat. Hij bewijst geen nieuw gedrag — hij houdt een eigenschap vast die
+    nergens anders afdwingbaar is. HA's service worker heeft precies één route
+    die nooit cachet:
+    de /api/- en /auth/-route met NetworkOnly. Verhuist de lader naar een ander
+    pad, dan valt hij onder StaleWhileRevalidate en is de hele constructie
+    zinloos — zonder dat er iets zichtbaar stukgaat. Vandaar deze regel.
+    """
+    assert LOADER_URL_PATH.startswith("/api/")
+
+
+async def test_de_lader_geeft_de_hash_van_de_bundel_op_schijf(
+    hass: HomeAssistant, hass_client_no_auth
+) -> None:
+    """De lader importeert de gehashte bundel-URL met de hash van dit moment.
+
+    NIEUW GEDRAG. De hash wordt hier opnieuw uit het bestand berekend, zodat een
+    implementatie die een vaste string of het versienummer teruggeeft faalt.
+    """
+    await zet_integratie_op(hass)
+    client = await hass_client_no_auth()
+
+    antwoord = await client.get(LOADER_URL_PATH)
+    assert antwoord.status == 200
+
+    tekst = await antwoord.text()
     hash_ = hashlib.sha256(BUNDEL.read_bytes()).hexdigest()[:HASH_LENGTE]
-    assert verwacht.endswith(f"?v={hash_}")
+    assert f'import("{CARD_URL_PATH}?v={hash_}");' in tekst
 
     # Het versienummer mag er niet in staan; dat zou de oude fout zijn.
-    manifest_versie = "0.1.0"
-    assert f"?v={manifest_versie}" not in verwacht
+    assert "?v=1.0" not in tekst
 
 
-async def test_beide_routes_dezelfde_url(hass: HomeAssistant, opgezet) -> None:
-    """De index-import en de Lovelace-resource dragen exact dezelfde URL.
+async def test_de_lader_mag_niet_gecachet_worden(
+    hass: HomeAssistant, hass_client_no_auth
+) -> None:
+    """Cache-Control: no-store, naast de NetworkOnly-route van de service worker.
 
-    NIEUW GEDRAG en de kern van deze ronde. Zou een van de twee de URL
-    zelfstandig opbouwen, dan lopen ze uit elkaar zodra de bundel wijzigt en
-    haalt de browser de bundel twee keer op.
+    NIEUW GEDRAG. Twee lagen met twee redenen: de service worker dekt een
+    geinstalleerde PWA, de header dekt een gewone browser. Valt de header weg,
+    dan houdt de HTTP-cache de lader vast en is het probleem terug.
     """
-    index_urls = hass.data[DATA_EXTRA_MODULE_URL].urls
+    await zet_integratie_op(hass)
+    client = await hass_client_no_auth()
+
+    antwoord = await client.get(LOADER_URL_PATH)
+    cache_control = antwoord.headers.get("Cache-Control", "")
+
+    assert "no-store" in cache_control, f"kreeg {cache_control!r}"
+
+    # En het content-type, want een module met een verkeerd type wordt door de
+    # browser geweigerd (strikte MIME-controle op ES-modules) terwijl de server
+    # gewoon 200 zegt. De mutatieproef van fase 11 vond dit als gat.
+    assert "javascript" in antwoord.headers.get("Content-Type", ""), (
+        antwoord.headers.get("Content-Type")
+    )
+
+
+async def test_de_lader_vereist_geen_token(
+    hass: HomeAssistant, hass_client_no_auth
+) -> None:
+    """Een <script>-tag stuurt geen bearer-token mee.
+
+    NIEUW GEDRAG, met een positieve controle op de inhoud: een 200 met een leeg
+    antwoord zou ook slagen als we alleen de status controleerden, en dat is
+    precies wat een verkeerd opgezette view oplevert.
+    """
+    await zet_integratie_op(hass)
+    client = await hass_client_no_auth()
+
+    antwoord = await client.get(LOADER_URL_PATH)
+
+    assert antwoord.status == 200
+    assert CARD_URL_PATH in await antwoord.text()
+
+
+async def test_de_lader_url_verandert_niet_als_de_bundel_verandert(
+    hass: HomeAssistant, hass_client_no_auth, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dit is de eigenschap waar de hele constructie op berust.
+
+    NIEUW GEDRAG. Verandert de bundel, dan verandert wat de lader TERUGGEEFT maar
+    niet WAAR hij staat. Alleen daardoor kan een verouderd document — dat de
+    lader-URL bevat en niet de hash — de klant niet meer op oude code zetten.
+
+    Met een positieve controle: eerst wordt aangetoond dat het antwoord werkelijk
+    verandert, zodat "de URL bleef gelijk" niet triviaal waar is.
+    """
+    await zet_integratie_op(hass)
+    client = await hass_client_no_auth()
+
+    url_voor = sorted(hass.data[DATA_EXTRA_MODULE_URL].urls)
+    body_voor = await (await client.get(LOADER_URL_PATH)).text()
+
+    # Doe alsof de bundel is bijgewerkt: dezelfde setup, andere hash.
+    import custom_components.domotiapp_alarm as integratie
+
+    monkeypatch.setattr(integratie, "_bereken_hash", lambda pad: "beefbeefbeef")
+
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    url_na = sorted(hass.data[DATA_EXTRA_MODULE_URL].urls)
+    body_na = await (await client.get(LOADER_URL_PATH)).text()
+
+    # Positieve controle: er is werkelijk iets veranderd.
+    assert body_voor != body_na, "de hash in het antwoord moet meeveranderen"
+    assert "beefbeefbeef" in body_na
+
+    # En de eigenschap zelf: het adres bleef hetzelfde.
+    assert url_voor == url_na == [LOADER_URL_PATH]
+
+
+async def test_lader_en_resource_wijzen_naar_dezelfde_bundel(
+    hass: HomeAssistant, hass_client_no_auth
+) -> None:
+    """Beide routes komen op een modulespecifier uit.
+
+    REGRESSIEWACHT. Deze eis stond er vóór fase 11 al, met dezelfde bedoeling in
+    een andere vorm: toen droegen index en resource letterlijk dezelfde string,
+    nu moet de lader dezelfde URL IMPORTEREN die de resource draagt. Lopen ze
+    uit elkaar, dan evalueert de browser twee modules en kan de oude de
+    registratierace winnen (valkuil 1).
+    """
+    await zet_integratie_op(hass)
+    client = await hass_client_no_auth()
+
     resources = await onze_resources(hass)
-
-    assert len(resources) == 1, f"verwacht precies één resource, kreeg {resources}"
+    assert len(resources) == 1, f"verwacht precies een resource, kreeg {resources}"
     resource_url = resources[0]["url"]
-
-    assert resource_url in index_urls
-    assert resource_url == verwachte_url()
     assert resources[0]["type"] == "module"
+
+    body = await (await client.get(LOADER_URL_PATH)).text()
+    assert f'import("{resource_url}");' in body
+    assert resource_url == verwachte_url()
 
 
 async def test_resource_wordt_bijgewerkt_bij_hashwissel(hass: HomeAssistant) -> None:
@@ -273,8 +403,9 @@ async def test_setup_gaat_niet_stuk_zonder_lovelace_opslag(
 
     entry = await zet_integratie_op(hass)
 
-    # Positieve controle: de eerste route staat er wél.
-    assert verwachte_url() in hass.data[DATA_EXTRA_MODULE_URL].urls
+    # Positieve controle: de eerste route staat er wél. Sinds fase 11 is dat de
+    # lader en niet meer de gehashte URL.
+    assert LOADER_URL_PATH in hass.data[DATA_EXTRA_MODULE_URL].urls
     # De entry is echt geladen, niet in een foutstand terechtgekomen.
     assert entry.state is ConfigEntryState.LOADED
     # En de tweede route is netjes op None uitgekomen in plaats van te gooien.

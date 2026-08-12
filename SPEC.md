@@ -111,12 +111,38 @@ heeft bewust geen `version`. Zie `docs/fase-1/RAPPORT.md`, taak A.
                     └─────────────────────────────────────────┘
 ```
 
-**De laadketen staat en verandert niet.** De integratie serveert haar bundel op
-`/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>` en registreert die URL
-langs **twee** routes: `add_extra_js_url` (voor HA's ingebouwde panelen) en een
-Lovelace-resource (voor een browser met een verouderde `index.html` in zijn
-service-workercache). Eén URL, twee routes, één ophaling. Zie
-`docs/fase-1/RAPPORT.md` taak G en H, en `resource.py`.
+**De laadketen.** De integratie serveert haar bundel op
+`/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>` en laat de browser die
+URL langs **twee** routes vinden: `add_extra_js_url` (voor HA's ingebouwde
+panelen) en een Lovelace-resource (voor een browser met een verouderde
+`index.html` in zijn service-workercache). Eén bundel-URL, twee routes, één
+ophaling. Zie `docs/fase-1/RAPPORT.md` taak G en H, en `resource.py`.
+
+**Wat er in `index.html` staat is sinds fase 11 niet de bundel-URL zelf maar een
+stabiele lader**, en dat is een correctie op de zin die hier eerst stond ("de
+laadketen staat en verandert niet"). Home Assistant zet de import letterlijk in
+het HTML-document, en dat document wordt door de service worker met
+StaleWhileRevalidate gecachet. Na een update kreeg de klant daardoor het
+document van de vórige versie terug, met de vórige hash erin — en dus de oude
+kaart achter een nieuwe installatie. Dat is op een verse instance gereproduceerd
+(`docs/fase-11/RAPPORT.md`).
+
+De lader staat op `/api/domotiapp_alarm/loader.js`. Drie eigenschappen, en ze
+zijn alle drie dragend:
+
+1. **Zijn URL verandert nooit**, dus een verouderd document wijst er nog steeds
+   naar.
+2. **Hij wordt nooit gecachet**: `/api/` is de enige route die HA's service
+   worker met NetworkOnly afhandelt, en `Cache-Control: no-store` sluit de
+   HTTP-cache van de browser uit.
+3. **Hij importeert dezelfde gehashte URL als de Lovelace-resource**, zodat
+   beide routes op één modulespecifier uitkomen en de bundel één keer wordt
+   opgehaald en geëvalueerd.
+
+De `?v=` blijft dus wat hij was — een cachebuster op de bundel, en een die
+wérkt: HA's service worker zet `ignoreSearch` alleen op de wortelroute en niet
+op de file-cache. Wat eraan ontbrak was dat de plek waar die hash stond zelf
+gecachet werd.
 
 De tweede route is **tijdelijk bedoeld**. Landt `frontend#53208` of
 `core#176912` in een HA-release, dan kan hij eruit en is `homeassistant` in

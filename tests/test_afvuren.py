@@ -580,7 +580,9 @@ async def test_een_onbereikbare_speaker_laat_de_wekker_niet_afgaan(
     melding = bericht(hass, registry_id)
     assert melding["kind"] == meldingen.KIND_SPEAKER_UNAVAILABLE
     assert melding["severity"] == "error"
-    assert "niet bereikbaar" in melding["text"]
+    # Fase 11: "beschikbaar" en niet "bereikbaar" — de code stelt HA's eigen
+    # state vast, geen netwerkconditie (valkuil 53).
+    assert "niet beschikbaar in Home Assistant" in melding["text"]
 
 
 async def test_een_mislukte_wekker_stuurt_het_failed_event(
@@ -931,6 +933,54 @@ async def test_de_oploop_bereikt_het_ingestelde_niveau_in_twintig_stappen(
         0,
         *[2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40],
     ]
+
+
+@pytest.mark.parametrize(
+    ("vertraging", "eerste_stap"),
+    [
+        # Zonder vertraging: de gewone eerste stap. Dit is de POSITIEVE CONTROLE —
+        # zonder deze regel zou "hij begint op 6" ook gelden voor een implementatie
+        # die zomaar stappen overslaat.
+        (0.0, 2),
+        # Met een play_media die 2,5 s blokkeerde valt de eerste tik op 3,5 s
+        # verstreken, en dan is stap 2 (nulgebaseerd) verschuldigd: 6 %.
+        (2.5, 6),
+    ],
+)
+async def test_de_oploop_haalt_in_na_een_trage_play_media(
+    hass: HomeAssistant,
+    hass_storage: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    vertraging: float,
+    eerste_stap: int,
+) -> None:
+    """NIEUW GEDRAG (fase 11), en de reden dat `index_bij` bestaat.
+
+    `music_assistant.play_media` blokkeert 2,1-2,6 s (gemeten in fase 3c). Zolang
+    begon de oploop pas op +3,1 s en was hij op +22,3 s klaar, terwijl de klant
+    twintig seconden had ingesteld. Nu slaat hij de gemiste stappen over.
+
+    De vertraging wordt nagebootst door de monotone klok een sprong te laten maken
+    tussen het zetten van het volume op 0 en de eerste tik — precies wat een
+    blokkerende `play_media` doet. HA's eigen klok kan dat niet nabootsen: die
+    wordt met `async_fire_time_changed` gezet en raakt de monotone klok niet.
+    En `time.monotonic` zelf vervangen mag niet: asyncio plant zijn timers erop,
+    dus dan meet je HA's scheduler mee. Vandaar de eigen naam `_klok`.
+    """
+    import custom_components.domotiapp_alarm.afvuren as afvuren_mod
+
+    nu = [1000.0]
+    monkeypatch.setattr(afvuren_mod, "_klok", lambda: nu[0])
+
+    registry_id, huis = await zet_op(hass, hass_storage)
+    await vuur(hass, registry_id)
+
+    # De monotone klok staat bij de eerste tik op: het bedoelde begin, plus de
+    # vertraging van play_media, plus de seconde die de tik zelf wachtte.
+    nu[0] = 1000.0 + vertraging + OPLOOP_STAP_SECONDEN
+    await tik(hass, OPLOOP_STAP_SECONDEN + 0.1)
+
+    assert huis.volumes() == [0, eerste_stap]
 
 
 async def test_de_oploop_breekt_af_als_de_gebruiker_aan_het_volume_draait(

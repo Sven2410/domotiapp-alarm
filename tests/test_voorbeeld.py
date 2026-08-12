@@ -300,7 +300,7 @@ async def test_onbereikbare_speaker_geeft_de_noodrem(
     antwoord = await _stuur(client, _start())
     assert not antwoord["success"]
     assert antwoord["error"]["code"] == "speaker_unavailable"
-    assert "niet bereikbaar" in antwoord["error"]["message"]
+    assert "niet beschikbaar in Home Assistant" in antwoord["error"]["message"]
     assert huis.namen() == []
 
 

@@ -1,20 +1,24 @@
 """DomotiApp Alarm — serveert en registreert zijn eigen Lovelace-kaart.
 
-In fase 1 doet de integratie precies drie dingen, en niets meer:
+De frontendkant bestaat uit drie stukken, en sinds fase 11 zijn dat er drie en
+niet meer twee:
 
 1. `hass.http.async_register_static_paths()` — het gebundelde JS-bestand op een
-   eigen URL zetten.
-2. `frontend.add_extra_js_url()` — dat bestand door HA laten importeren in
-   `index.html`, zodat de klant géén Lovelace-resource hoeft toe te voegen.
-3. **Dezelfde URL óók als Lovelace-resource registreren.** Twee routes, één
-   URL: `index.html` dekt HA's ingebouwde panelen, de resource dekt een browser
-   die nog een `index.html` van vóór de installatie in zijn service-workercache
-   heeft. Zie `resource.py` voor het waarom.
+   eigen URL zetten, met de bundelhash in de `?v=`.
+2. `frontend.add_extra_js_url()` — maar **niet** met die gehashte URL. HA zet de
+   import letterlijk in het HTML-document, en dat document wordt door de service
+   worker gecachet; na een update kreeg de klant dan de oude hash terug. Wat er
+   nu in `index.html` staat is een **stabiele lader** onder `/api/`, die de hash
+   van dít moment teruggeeft. Zie `loader.py` — daar staat de meting.
+3. **De gehashte URL óók als Lovelace-resource registreren.** Die lijst komt
+   over de WebSocket en is dus nooit verouderd. `index.html` dekt HA's
+   ingebouwde panelen, de resource dekt een browser met een oude index. Zie
+   `resource.py`.
 
-De `?v=` in de frontend-URL is de **hash van het bundelbestand**, niet het
-versienummer. Alleen dan verandert de URL precies wanneer de inhoud verandert.
-Gevolg voor het ontwikkelen: na elke `npm run build` moet de config entry
-herladen worden, anders serveert HA de oude hash (CLAUDE.md, valkuil 2).
+De `?v=` is de **hash van het bundelbestand**, niet het versienummer. Alleen dan
+verandert de URL precies wanneer de inhoud verandert. Gevolg voor het
+ontwikkelen: na elke `npm run build` moet de config entry herladen worden,
+anders serveert HA de oude hash (CLAUDE.md, valkuil 2).
 """
 
 from __future__ import annotations
@@ -29,18 +33,20 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
-from . import afvuren, meldingen, planner as planner_mod, resource, voorbeeld, websocket
+from . import afvuren, loader, meldingen, planner as planner_mod, resource, voorbeeld, websocket
 from .const import (
     CARD_FILENAME,
     CARD_URL_PATH,
     DATA_ENTRY_COUNT,
     DATA_JS_URL,
+    DATA_LOADER_REGISTERED,
     DATA_PLANNER,
     DATA_RESOURCE_ID,
     DATA_STATIC_PATH_REGISTERED,
     DATA_STORE,
     DOMAIN,
     HASH_LENGTE,
+    LOADER_URL_PATH,
 )
 from .store import AlarmStore
 
@@ -82,17 +88,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data[DATA_STATIC_PATH_REGISTERED] = True
         _LOGGER.debug("Statisch pad geregistreerd op %s", CARD_URL_PATH)
 
+    # De lader die in index.html terechtkomt (fase 11). Zijn URL is CONSTANT en
+    # de hash zit in zijn antwoord, niet in zijn adres. Daarmee kan een
+    # verouderde index.html ons niet meer op een oude bundel zetten: hij verwijst
+    # naar dezelfde lader, en die wordt nooit gecachet. Zie loader.py voor de
+    # meting waar dit uit voortkomt.
+    loader.async_registreer(hass, bundel_hash)
+
     # UrlManager houdt een frozenset bij, dus een tweede identieke add() is
-    # onschadelijk. Een gewijzigde bundel levert wél een andere URL op; de oude
-    # moet dan weg, anders staan er twee import()s in index.html.
+    # onschadelijk. Vóór fase 11 stond hier de gehashte bundel-URL en moest de
+    # vorige verwijderd worden bij elke wijziging; nu verandert deze URL nooit.
+    # `vorige_url` blijft staan voor precies één geval: een installatie die van
+    # vóór fase 11 komt heeft binnen dezelfde HA-run nog de gehashte URL
+    # geregistreerd, en die moet weg, anders staan er twee import()s.
     vorige_url = data.get(DATA_JS_URL)
-    if vorige_url is not None and vorige_url != js_url:
+    if vorige_url is not None and vorige_url != LOADER_URL_PATH:
         remove_extra_js_url(hass, vorige_url)
 
-    if vorige_url != js_url:
-        add_extra_js_url(hass, js_url)
-        data[DATA_JS_URL] = js_url
-        _LOGGER.debug("Kaart aangemeld bij de frontend als %s", js_url)
+    if vorige_url != LOADER_URL_PATH:
+        add_extra_js_url(hass, LOADER_URL_PATH)
+        data[DATA_JS_URL] = LOADER_URL_PATH
+        _LOGGER.debug("Lader aangemeld bij de frontend als %s", LOADER_URL_PATH)
 
     # De tweede laadroute. Bewust met dezelfde `js_url`-variabele en niet met
     # een opnieuw opgebouwde string: lopen de twee URL's uit elkaar, dan
