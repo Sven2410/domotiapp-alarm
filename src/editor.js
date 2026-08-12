@@ -367,10 +367,54 @@ export class DomotiappAlarmEditor extends LitElement {
       padding: 0;
       border: 0;
       margin: 0;
-      background: transparent;
       color: var(--primary-text-color);
       font-family: inherit;
       font-size: var(--ha-font-size-m, 14px);
+    }
+    /* Een input heeft geen uitklappaneel, dus die mag het vak eronder laten
+       zien. Een select niet — zie het blok hieronder. Ze staan bewust apart in
+       plaats van dat de een de ander overschrijft: dan is aan de regel zelf te
+       zien welke keuze waar geldt. */
+    .vak input {
+      background: transparent;
+    }
+    /* --- het uitklappaneel van een select (fase 12) ---
+
+       Fase 10 zette background transparent op de control, omdat het vak
+       eronder de achtergrond al levert. Voor een input klopt dat. Voor een
+       select niet: de browser tekent het UITKLAPPANEEL met de
+       background-color van de select zelf, en dat paneel valt buiten onze
+       shadow root. Transparant betekent daar niet "neem het vak eronder" maar
+       "val terug op de standaard van het platform" — en die is wit.
+
+       Gemeten op de kaart van 1.1.0, bij alle DRIE de dropdowns (speaker, soort
+       en lamp):
+
+           background-color   rgba(0, 0, 0, 0)     <- doorzichtig
+           color              rgb(225, 225, 225)   <- bijna wit
+
+       Wit op wit dus. Alleen de gemarkeerde regel was leesbaar, omdat de browser
+       daar zijn eigen markering overheen tekent. Zie de screenshots van de
+       eigenaar in docs/fase-11/.
+
+       De reparatie is een achtergrondkleur en geen padding of rand, dus de regel
+       van fase 10 (valkuil 70) blijft staan: de control houdt padding 0 en rand
+       0 zolang hij width 100% krijgt. */
+    .vak select {
+      background-color: var(--card-background-color, #fff);
+    }
+    .vak select option {
+      background-color: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+    }
+    /* Het gemarkeerde item houdt de accentkleur die de dagknoppen ook gebruiken.
+       Dat is de enige plek waar #026FA1 hier voorkomt en het is een accent, zoals
+       SPEC 1.1 voorschrijft. Zonder deze regel valt de markering terug op die van
+       het platform, en die gaat uit van zwarte tekst op een lichte balk — bij een
+       donker thema is dat opnieuw onleesbaar. */
+    .vak select option:checked {
+      background-color: var(--domotiapp-accent);
+      color: #fff;
     }
     .vak input[type="time"] {
       font-size: 24px;
