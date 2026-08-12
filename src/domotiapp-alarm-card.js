@@ -576,9 +576,26 @@ class DomotiappAlarmCard extends LitElement {
       flex: 0 0 auto;
     }
 
-    /* --- melding en bevestiging op een rij --- */
+    /* --- melding en bevestiging op een rij ---
+
+       WIKKELT, sinds fase 9. Gemeten in een échte Bubble Card-pop-up op 390 px —
+       telefoonbreedte, de conditie waarin de klant hem gebruikt — met een wekker
+       die "Zaterdagochtendzwemtraining" heet: de knop "Verwijderen" stak 27 px
+       buiten de kaart en 9 px buiten de pop-up, en dat laatste betekent dat een
+       deel van hem niet meer aan te wijzen is. Met een korte naam gebeurt het
+       onder een kaartbreedte van 276 px.
+
+       Waarom het niet opviel: .boodschap had flex 1, dus min-width auto,
+       en dan kan de tekst niet onder zijn langste woord krimpen. De rij liep over
+       en duwde de knoppen naar rechts naar buiten. Fase 8 heeft dit voor .voet
+       en de zoekrij opgelost maar deze rij niet meegenomen, omdat de meting de
+       bevestiging nooit heeft geopend.
+
+       Dat het uitgerekend de knop van een ONOMKEERBARE handeling is die wegvalt,
+       is de reden dat dit geen schoonheidsfoutje is. */
     .onderrij {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 8px;
       padding: 0 16px 12px 16px;
@@ -586,7 +603,14 @@ class DomotiappAlarmCard extends LitElement {
       font-size: var(--ha-font-size-s, 12px);
     }
     .onderrij .boodschap {
-      flex: 1;
+      /* Een ondergrens in plaats van flex 1: onder de 8em gaan de knoppen naar
+         de volgende regel in plaats van dat ze de rij uit worden geduwd. */
+      flex: 1 1 8em;
+      /* min-width 0 haalt de impliciete ondergrens van de flexitem weg en
+         overflow-wrap breekt een naam die zelf breder is dan de kaart — een
+         wekkernaam is invoer van de klant en heeft geen bovengrens. */
+      min-width: 0;
+      overflow-wrap: anywhere;
       color: var(--secondary-text-color);
     }
     .onderrij.fout .boodschap,
@@ -594,6 +618,14 @@ class DomotiappAlarmCard extends LitElement {
       color: var(--error-color);
     }
     button.tekstknop {
+      /* Hier stond in de eerste opzet van fase 9 een flex 0 0 auto, geleend van de
+         voetregel in de editor (fase 8). De mutatieproef wees uit dat die regel
+         hier NIETS doet: hem terugzetten op de standaard 0 1 auto veranderde bij
+         390, 244 én 180 px geen enkele positie. De reden is de white-space
+         hieronder — een knop die niet mag afbreken kan door flexbox niet onder
+         zijn tekstbreedte geknepen worden, dus er valt niets te krimpen. Volgens
+         valkuil 34, derde rij, gaat zo'n regel eruit in plaats van dat er een
+         test bij verzonnen wordt. */
       border: 1px solid var(--divider-color);
       border-radius: 16px;
       background: none;
