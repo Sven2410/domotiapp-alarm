@@ -2476,8 +2476,16 @@ persoon daarna kiest.
   kaartinstellingen."** Geen fout, geen rode tekst: dit is de toestand direct na
   toevoegen.
 - **`person` verwijst naar een niet-bestaande entiteit** — de kaart toont
-  **"De gekozen persoon bestaat niet meer."** in foutkleur. Zie
+  **"De gekozen persoon is niet gevonden."** in foutkleur. Zie
   [sectie 18.1](#181-de-person-entiteit-wordt-hernoemd-of-verwijderd).
+
+  De tekst luidde tot fase 11 *"De gekozen persoon bestaat niet meer."* en is
+  gewijzigd omdat hij meer beweerde dan de kaart vaststelt. Wat de kaart weet is
+  dat `hass.states[person]` ontbreekt; of de persoon **verwijderd** dan wel
+  **hernoemd** is, valt daar niet uit af te leiden — [18.1](#181-de-person-entiteit-wordt-hernoemd-of-verwijderd)
+  zegt dat zelf. Bij een hernoeming stuurde de oude tekst de klant naar het
+  verkeerde scherm. "Niet gevonden" dekt beide gevallen en wijst naar de
+  kaartinstellingen, waar de oplossing in allebei de gevallen zit.
 - **`person` zit niet in het `person`-domein** — `setConfig` gooit, zoals
   Lovelace verwacht bij een ongeldige config. Dit is de enige plek waar de kaart
   mag gooien, en het is wat Lovelace als "Configuratiefout" toont.
@@ -2533,7 +2541,9 @@ zien.
 2. De planning van die wekkers wordt **opgezegd** — een wekker voor een
    niet-bestaande persoon gaat niet af. De integratie luistert daarvoor op
    `EVENT_ENTITY_REGISTRY_UPDATED` met `action == "remove"`.
-3. De kaart toont **"De gekozen persoon bestaat niet meer."**
+3. De kaart toont **"De gekozen persoon is niet gevonden."** — dezelfde tekst als
+   bij een hernoeming, en dat is met opzet: de kaart kan de twee niet
+   onderscheiden (zie [16.3](#163-wat-de-kaart-doet-zonder-geldige-person)).
 4. Wordt de persoon opnieuw aangemaakt, dan krijgt hij een **nieuw**
    registry-entry-ID en begint hij met een lege wekkerlijst. De oude regels
    blijven staan. Dat is hetzelfde gedrag als bij DomotiApp Scene en het moet in

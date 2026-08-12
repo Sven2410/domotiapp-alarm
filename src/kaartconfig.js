@@ -10,7 +10,22 @@ export const PERSON_DOMEIN = "person";
 
 /** De drie teksten uit SPEC 16.3 en 19.2, letterlijk. */
 export const TEKST_KIES_PERSOON = "Kies een persoon in de kaartinstellingen.";
-export const TEKST_PERSOON_WEG = "De gekozen persoon bestaat niet meer.";
+/**
+ * Was: "De gekozen persoon bestaat niet meer." (fase 11, na goedkeuring van de
+ * eigenaar).
+ *
+ * De kaart stelt één ding vast: `hass.states[person]` ontbreekt. Dat kan
+ * betekenen dat de persoon verwijderd is, maar net zo goed dat hij **hernoemd**
+ * is — SPEC 18.1 zegt zelf dat dat verschil van buiten niet te zien is. "Bestaat
+ * niet meer" koos daar één van de twee uit, en bij een hernoeming stuurde het de
+ * klant naar het verkeerde scherm: hij gaat een persoon terugzetten die er nog
+ * gewoon is, terwijl de oplossing in de kaartinstellingen zit.
+ *
+ * Dit is hetzelfde patroon als `sound_gone` in fase 6 en de twee teksten van
+ * fase 6b: geschreven bij de SPEC-sectie in plaats van bij de regel code die het
+ * vaststelt (valkuil 53).
+ */
+export const TEKST_PERSOON_WEG = "De gekozen persoon is niet gevonden.";
 export const TEKST_ONLEESBAAR =
   "De opgeslagen wekkers van deze persoon zijn onleesbaar.";
 

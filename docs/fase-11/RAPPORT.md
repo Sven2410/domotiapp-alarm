@@ -223,14 +223,29 @@ Assistants eigen toestand en verder niets — en bij `ma_unavailable` wees de ou
 tekst de klant naar zijn server terwijl het probleem in zijn integratielijst kon
 zitten.
 
-**Eén gevonden die ik NIET heb gewijzigd, en waarom.** `TEKST_PERSOON_WEG` in
-`kaartconfig.js` zegt *"De gekozen persoon bestaat niet meer."* De kaart stelt
-alleen vast dat `hass.states[person]` ontbreekt, en dat kan óók een hernoeming
-zijn. SPEC 18.1 erkent dat zelf ("het onderscheid tussen hernoemd en verwijderd
-is van buiten niet te zien") en SPEC 16.3 schrijft deze tekst **letterlijk** voor.
-Wijzigen is dus een SPEC-wijziging en een productbeslissing.
-**Voorstel voor de eigenaar:** *"De gekozen persoon is niet gevonden."* — dat
-dekt beide gevallen en verwijst naar de kaartinstellingen, waar de oplossing zit.
+**Een vierde gevonden, voorgelegd en na goedkeuring gewijzigd.**
+`TEKST_PERSOON_WEG` in `kaartconfig.js` zei *"De gekozen persoon bestaat niet
+meer."* De kaart stelt alleen vast dat `hass.states[person]` ontbreekt, en dat
+kan óók een **hernoeming** zijn — SPEC 18.1 zegt dat zelf ("het onderscheid
+tussen hernoemd en verwijderd is van buiten niet te zien"). Bij een hernoeming
+stuurde de oude tekst de klant naar het verkeerde scherm: hij gaat een persoon
+terugzetten die er nog gewoon is, terwijl de oplossing in de kaartinstellingen
+zit.
+
+Omdat SPEC 16.3 de tekst **letterlijk** voorschrijft, is dit eerst voorgelegd. De
+eigenaar ging akkoord; de tekst is nu *"De gekozen persoon is niet gevonden."* en
+SPEC 16.3 en 18.1 zijn bijgewerkt, met de reden erbij zodat de afweging niet
+opnieuw gemaakt hoeft te worden.
+
+Er staat een **REGRESSIEWACHT** op in `tests/js/kaartconfig.test.mjs`
+(`beweert niet dat de persoon verwijderd is`), met een positieve controle ernaast
+zodat "er staat geen claim in" niet ook waar is voor een lege tekst. Aangetoond
+dat hij op de oude tekst faalt:
+
+```
+✖ beweert niet dat de persoon verwijderd is (REGRESSIEWACHT)
+ℹ fail 1
+```
 
 ### De rest van de lijst
 
@@ -276,7 +291,8 @@ halve dag kostte was "`box-sizing: border-box` declareren is genoeg".
 
 ## De tests
 
-**346 Python-tests** (was 327) en **85 JS-tests**. Elf nieuwe Python-tests.
+**346 Python-tests** (was 327) en **86 JS-tests** (was 85). Elf nieuwe
+Python-tests en één nieuwe JS-test.
 
 | Test | Label |
 |---|---|
@@ -416,8 +432,6 @@ gedrag.
    1.0.5 gaat, heeft in zijn cache nog een document mét de oude hash — dat is
    precies het geval dat deze fix wegneemt, maar de fix zit pas ín de nieuwe
    versie. Vanaf 1.0.5 is het over. Dat is onvermijdelijk en het hoort gezegd.
-4. **`TEKST_PERSOON_WEG` is niet gewijzigd**, omdat SPEC 16.3 hem letterlijk
-   voorschrijft. Er ligt een voorstel; de beslissing is van de eigenaar.
 5. **De volume-oploop is niet live nagemeten** op de dev-instance. De inhaalslag
    is in tests aangetoond met een bestuurbare klok; een livemeting zou de 2,1–2,6 s
    van `play_media` opnieuw moeten uitlokken en dat voegt aan de vaststelling niets
@@ -432,10 +446,11 @@ gedrag.
    uit `sw-modern.js` van 2026.8 gelezen. Verandert HA die, dan valt de lader
    terug onder StaleWhileRevalidate — en dan is `Cache-Control: no-store` de
    tweede laag die het alsnog opvangt. Er staat een test op het voorvoegsel.
-3. **De meldingsteksten zijn gewijzigd zonder de eigenaar te vragen.** Ze vielen
-   onder de opdracht ("controleer of er nog liegende teksten zijn"), en de
+3. **De drie meldingsteksten zijn gewijzigd zonder de eigenaar te vragen.** Ze
+   vielen onder de opdracht ("controleer of er nog liegende teksten zijn"), en de
    wijziging maakt ze smaller in plaats van anders. `TEKST_PERSOON_WEG` viel daar
-   níét onder omdat SPEC hem letterlijk voorschrijft.
+   níét onder omdat SPEC hem letterlijk voorschrijft; die is **wél** voorgelegd en
+   pas na goedkeuring gewijzigd.
 4. **Het versienummer is niet opgehoogd.** De releaseprocedure zegt dat de
    eigenaar tag en release maakt; de README noemt 1.0.5 als de versie waarin de
    lader zit, wat de eerstvolgende zou zijn.
