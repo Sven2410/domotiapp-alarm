@@ -28,6 +28,17 @@ het hier ook geldt, plus wat fase 0 zelf heeft gemeten.
 - **Frontendwijzigingen worden in een echte browser met echte kliks
   geverifieerd** via `claude-in-chrome`. Een synthetisch event bewijst de
   handler, niet de control. **Toon `isTrusted`.**
+- **En ze worden gemeten in de BUBBLE CARD-conditie, niet alleen via
+  `grid_options`.** Dat is de conditie waarin de klant de kaart gebruikt, en een
+  smalle kaart in het sections-grid is er een benadering van: een echte pop-up
+  heeft eigen padding, een eigen breedte, een eigen scrollcontainer en is op een
+  telefoon schermvullend. Drie rondes lang is er in de benadering gemeten terwijl
+  de melding uit de echte conditie kwam. De opstelling staat klaar en is met
+  `scripts/bubble-meetopstelling.md` opnieuw te bouwen: view
+  `/fase-4a/bubble-echt`, `scripts/telefoon.html` voor een echte telefoonbreedte,
+  `scripts/meet-afsnijden.js` voor de meting. **En meet meer dan de rusttoestand**
+  — fase 9 vond de bevinding in de verwijderbevestiging, die in geen enkele
+  eerdere meting openstond.
 - **Tekstvelden worden met échte toetsaanslagen geverifieerd**, nooit met
   `.value =` of een programmatisch `input`-event, en **in elk tekstveld wordt
   expliciet een spatie getypt**. Toon `isTrusted` op de keydown van die spatie.
@@ -752,6 +763,59 @@ Vindplaatsen in `docs/fase-8/RAPPORT.md`.
     past, past overal. Let op dat het **niet** dezelfde component is — een echte
     bubble card brengt eigen CSS mee.
 
+### Nieuw in fase 9
+
+Vindplaatsen in `docs/fase-9/RAPPORT.md`.
+
+66. **Het meettabblad rendert BUITEN BEELD op een vaste viewport van 1920 px, en
+    is niet te verkleinen.** `resize_window` meldt "Successfully resized" en
+    verandert niets; `window.outerWidth` is **0** en `document.visibilityState` is
+    `"hidden"`. Het OS-venster verplaatsen helpt ook niet — dat raakt een ander
+    Chrome-venster. Fase 4c schreef dit toe aan een gemaximaliseerd venster; dat
+    was het niet.
+    **De uitweg is `scripts/telefoon.html`:** het dashboard in een iframe van een
+    vaste breedte. Het ingesloten document krijgt dan werkelijk een viewport van
+    390 px, en daar hangen media queries, container queries, HA's mobiele
+    omslagpunt én Bubble Cards breedteberekening aan. Wat het **niet** nabootst:
+    `devicePixelRatio`, touch, het schermtoetsenbord, en de manier waarop een
+    telefoon `<input type="time">` zelf tekent.
+
+67. **HA in een iframe kiest zijn hoofdvenster op `window.name`, en zonder die
+    naam is elke navigatie stil stuk.** `get_main_window.ts` doet
+    `window.name === "ha-main-window" ? window : parent.name === … : top`. In een
+    naamloos frame valt HA dus terug op `top`, en `navigate()` doet zijn
+    `pushState` plus `location-changed` op de **rig** in plaats van op HA. Gemeten:
+    een echte klik (`isTrusted: true`, de listener zag hem) op een Bubble
+    Card-knop met `tap_action: navigate` deed **helemaal niets** — geen fout, geen
+    hashwijziging, nergens. Zet `name="ha-main-window"` op het iframe.
+    Bijkomend: **Bubble Card bouwt een standalone pop-up alleen als de hash bij het
+    LADEN aanwezig is**, en breekt hem bij het sluiten weer af. Sluit je de pop-up
+    tijdens een meetronde, dan moet het frame opnieuw geladen worden.
+
+68. **Een `<style>` in een shadow root wint het niet van lit.** Lit zet zijn
+    `static styles` in `adoptedStyleSheets`, en die gaan vóór een `<style>` in de
+    boom. Zonder `!important` doet een geïnjecteerde mutatie dus **niets** — en
+    een mutatieproef waarin niets verandert ziet er precies zo uit als een
+    mutatieproef die alles vangt. Fase 9 kreeg zo zeven "gevangen" mutaties die in
+    werkelijkheid nooit hadden bestaan.
+    **En ruim op met een controle, niet met goede bedoelingen.** Eén
+    mutatiestylesheet bleef hangen omdat de opruimende aanroep in een time-out
+    liep; alle metingen daarna gebeurden bovenop de volledig teruggedraaide CSS.
+    Controleer vóór **én** na elke mutatie dat de basis schoon is (valkuil 35).
+
+69. **`getBoundingClientRect` vindt een tekst niet die uit zijn EIGEN element
+    loopt.** Bij een naam die niet kan afbreken blijft het element netjes staan en
+    steekt alleen de tekst eruit: gemeten `clientWidth 174, scrollWidth 284`, dus
+    110 px tekst buiten het element en 93 px voorbij de kaart, terwijl de
+    rechthoekvergelijking **niets** meldde. Dat is valkuil 63 in spiegelbeeld —
+    daar vond `scrollWidth` te weinig en was de rect het antwoord, hier andersom.
+    Ze staan nu allebei in `scripts/meet-afsnijden.js`.
+    **De maat is niet "loopt de tekst uit zijn element"** — dat doet in een
+    flexindeling van alles een paar pixels — **maar "eindigt de tekst buiten de
+    kaart"**, en elementen die met `overflow: hidden` en een ellips met opzet
+    afkappen tellen niet mee. Zonder die twee filters meldde de eerste versie er
+    dertien op een rij, allemaal terecht afgekapt.
+
 ```bash
 npm install                # eenmalig
 npm run build              # bundelt src/ -> custom_components/.../frontend/
@@ -859,7 +923,8 @@ en die draait alleen bij opname in de standaardwinkel. Zie
 | 6 | Drie bevindingen uit productie op 1.0.0. (1) Shuffle staat nu altijd aan bij afspeellijst, album en artiest — `media_player.shuffle_set` vóór `play_media`, want MA schudt bij het laden van de queue (SPEC 9.6, nieuw). (2) De melding `sound_gone` zei "bestaat niet meer" terwijl het geluid bestond; hij zegt nu "kon niet gestart worden" mét de reden van MA (SPEC 11.7 herschreven — buiten de gestelde grens, gemeld). (3) Een afgelopen eenmalige wekker zette zichzelf nooit uit terwijl SPEC 14.5 dat sinds fase 2 eist; dat is nu op alle drie de routes gerepareerd, en opnieuw aanzetten geeft een nieuwe `one_shot_at` (SPEC 15.3). 297 Python-tests, 22 mutaties in twee rondes (3 gaten gedicht). Audit van SPEC 11.7: nog twee teksten claimen te veel | gemerged |
 | 6b | Vier bevindingen. (1) Het overloopmenu bleef onder de kaart hangen — HA heeft géén bruikbare menu-component (gemeten), dus een eigen `position: fixed` menu dat omhoog klapt en binnen de kaart blijft; gemeten op 373 px: was 71 px buiten de kaart, is nu 57 px erbinnen. (2) De kopbalk met de eerstvolgende wektijd en de plusknop staat nu **boven** de lijst; de lege staat ís die kopbalk (SPEC 3.1–3.3). (3) De laatste twee liegende teksten herschreven, mét het patroon erachter (SPEC 11.7). (4) Shuffle gaat na de wekker terug naar wat het was, met de drie regels van SPEC 9.5; live `false → true → false`. 308 Python- en 91 JS-tests, 23 mutaties in twee rondes (2 gaten gedicht) | gemerged, 1.0.1 |
 | 7 | De prullenbak, en overslaan eruit. De bevinding eerst uitgezocht: het menu opende maar half, en de oorzaak was een `position: fixed; inset: 0`-laag die sinds fase 4a élke klik op de kaart opving (valkuil 60). Het menu is vervangen door één prullenbakknop per rij met een bevestiging die naam en tijd noemt — geen `ha-dialog`, want die is in 2026.8 van mwc naar Web Awesome gegaan en zijn knoppen kwamen als 0 x 0 uit de verf (gemeten). `skip_next` is volledig verwijderd, met een migratie van schemaversie 1 naar 2; live bewezen op een echte oude `.storage`: 4 wekkers, 0 onleesbaar. 314 Python- en 85 JS-tests, 15 mutaties in twee rondes (2 gaten gedicht, 1 mutatie was zelf fout) | gemerged |
-| **8** | **Twee bevindingen uit een bubble card op de telefoon. (1) Afsnijden: de knoppenrij liep 67 px buiten de kaart en het zoekveld werd tot 27 px platgeknepen — `scrollWidth` vond geen van beide (valkuil 63). Voetregel en zoekrij wikkelen nu, en kaart én editor passen zich met een **benoemde** container query aan hun eigen breedte aan (valkuil 64). Gemeten bij 244 px: 0 van de 57 elementen valt nog buiten de kaart. (2) Het voorbeeld zet nu ook de wake-up light aan en zet hem bij het stoppen terug, met dezelfde drie regels als het volume (SPEC 5.4 en 12). Live: `uit → 100 % → uit` en `128 → 255 → 128`. 327 Python- en 85 JS-tests, 14 mutaties in twee rondes (2 gaten gedicht, 1 regel geschrapt als onbereikbaar)** | **deze ronde, PR #16** |
+| 8 | **Twee bevindingen uit een bubble card op de telefoon. (1) Afsnijden: de knoppenrij liep 67 px buiten de kaart en het zoekveld werd tot 27 px platgeknepen — `scrollWidth` vond geen van beide (valkuil 63). Voetregel en zoekrij wikkelen nu, en kaart én editor passen zich met een **benoemde** container query aan hun eigen breedte aan (valkuil 64). Gemeten bij 244 px: 0 van de 57 elementen valt nog buiten de kaart. (2) Het voorbeeld zet nu ook de wake-up light aan en zet hem bij het stoppen terug, met dezelfde drie regels als het volume (SPEC 5.4 en 12). Live: `uit → 100 % → uit` en `128 → 255 → 128`. 327 Python- en 85 JS-tests, 14 mutaties in twee rondes (2 gaten gedicht, 1 regel geschrapt als onbereikbaar)** | gemerged, 1.0.2 |
+| **9** | **Bubble Card v3.2.5 op de testinstance en een view `/fase-4a/bubble-echt` met een échte pop-up — de conditie waarin de klant hem gebruikt, en die drie rondes lang niet gemeten was. Daarin gevonden wat `grid_options` niet liet zien: de knop "Verwijderen" van de verwijderbevestiging stak bij een wekker met een lange naam **27 px buiten de kaart en 9 px buiten de pop-up** op 390 px — een deel van de knop van een onomkeerbare handeling was niet aan te wijzen. Fase 8 miste het omdat die meting de bevestiging nooit opende. `.onderrij` wikkelt nu. Ná: 0 buiten kaart én pop-up in vier toestanden over zes breedtes (kaart 394 → 208 px), en de container queries van fase 8 vuren aantoonbaar in de pop-up. **Het tijdveld is opnieuw niet gereproduceerd** — 320 px beschikbaar tegen 129 px nodig; er staan twee vragen open bij de eigenaar. De meetopstelling is vastgelegd (`scripts/telefoon.html`, `scripts/meet-afsnijden.js`, `scripts/bubble-meetopstelling.md`) en is nu werkafspraak. 327 Python- en 85 JS-tests (geen nieuwe: de fout is opmaak), 11 mutaties in twee rondes (1 regel geschrapt, 1 controle aan de meetfunctie toegevoegd)** | **deze ronde, PR** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -1121,6 +1186,25 @@ terug op zijn oude stand zodra je stopt.
    lamp komt daar één uitzondering bij die in SPEC staat: een **wekker** laat hem
    aan, een **voorbeeld** zet hem terug.
 
+**Wat er staat na fase 9:** de kaart is voor het eerst gemeten in een **echte
+Bubble Card-pop-up** op telefoonbreedte, en de bevestigingsregel valt daar niet meer
+buiten. Belangrijker dan de reparatie is de opstelling: de conditie waarin de klant
+werkt is nu opnieuw op te bouwen en te meten, in plaats van benaderd te worden met
+een smalle kolom in het sections-grid.
+
+**De twee regels van fase 9 die je niet mag omdraaien** (zie
+`docs/fase-9/RAPPORT.md`):
+
+1. **Meet in de conditie van de klant, en meet meer dan de rusttoestand.** De
+   bevinding zat in de verwijderbevestiging — een toestand die in vier
+   browserrondes niet één keer openstond. Een meting die alleen laat zien wat je
+   toch al bekeek, bevestigt dekking in plaats van gaten te zoeken (valkuil 46).
+2. **Rect én scrollWidth, want ze zijn elkaars blinde vlek.** Fase 8 leerde dat
+   `scrollWidth` overloop naar links mist; fase 9 dat de rect een tekst mist die
+   uit zijn eigen element loopt. Beide staan in `scripts/meet-afsnijden.js`, en de
+   maat is steeds de **kaart** — en sinds fase 9 ook de **pop-up**, want een kaart
+   kan binnen zijn eigen grenzen passen en er tóch buiten vallen.
+
 ### Waar de volgende fase begint
 
 `SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **tien** commando's die de
@@ -1162,6 +1246,16 @@ verkleinen, wat op een gemaximaliseerd venster niet lukt (fase 4c). En sinds fas
 smaller dan een echte bubble pop-up en dus strenger dan de werkelijkheid
 (valkuil 65).
 
+**En sinds fase 9 is er een vijfde die de andere vier vervangt zodra het om opmaak
+gaat: `/fase-4a/bubble-echt`** — een **echte** Bubble Card-pop-up (v3.2.5,
+standalone formaat) met de kaart erin, te bekijken op een echte telefoonbreedte via
+`http://localhost:8129/local/telefoon.html#390|/fase-4a/bubble-echt#wekker`. De
+opbouw staat in `scripts/bubble-meetopstelling.md`. Let op de rekeneenheid: een
+pop-up van 244 px levert een **kaart van 208 px**, en dat is 36 px strenger dan
+`/fase-4a/bubble`, waar de 244 px de breedte van de kaart is. Er staan **vijf**
+wekkers klaar waaronder **"Zaterdagochtendzwemtraining"** — die lange naam is wat de
+bevinding van fase 9 blootlegde en hoort te blijven staan.
+
 **En let op de testrig**: tel de snapclients vóór je een audiometing gelooft
 (valkuil 47). Er hoort er **één per hostID** te draaien.
 
@@ -1195,7 +1289,7 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | ~~De tekst bij `sound_gone` claimt te veel~~ **OPGELOST in fase 6**: hij zegt nu "kon niet gestart worden" met de reden van MA erbij | SPEC 11.7 | gedaan |
 | ~~`volume_ramp_unavailable` en `skipped_grace_window` claimen te veel~~ **OPGELOST in fase 6b**, met de voorstellen die de eigenaar heeft goedgekeurd. Het patroon erachter staat nu in valkuil 53 | SPEC 11.7 | gedaan |
 | ~~Shuffle wordt na de wekker niet teruggezet~~ **OPGELOST in fase 6b**: hij gaat terug met dezelfde drie regels als het volume (SPEC 9.6) | `afvuren.py` / SPEC 9.5, 9.6 | gedaan |
-| **Het tijdveld in de editor is niet op een telefoon getoetst.** De eigenaar meldde dat de tijd tegen de rand loopt; bij 244 px houdt "05:20" nog 130 px over binnen zijn veld, dus het is hier niet te reproduceren. De wijziging van fase 8 (meer padding, kleinere cijfers onder 300 px) is voorzorg. De native tijdweergave is precies wat een telefoon anders tekent | de editor | **eigenaar toetst dit op zijn telefoon** |
+| **Het tijdveld in de editor is niet op een telefoon getoetst.** In fase 9 opnieuw geprobeerd, nu in een échte Bubble Card-pop-up: op 390 px is er **320 px beschikbaar en 129 px nodig**, en zelfs op lettergrootte 36 px past het (172 px). Het kán op deze renderer niet afkappen. Wat overblijft is wat de rig niet nabootst: de telefoon tekent `<input type="time">` zelf. **Twee vragen staan open bij de eigenaar** (`docs/fase-9/RAPPORT.md`): een screenshot met de ontwikkelaarstools op het veld, én — goedkoper — of hij de ándere reparaties van fase 8 wél ziet. Zo niet, dan draait zijn telefoon een oude bundel achter een nieuwe `?v=` (valkuil 62) en is dát het antwoord | de editor | **eigenaar toetst dit op zijn telefoon** |
 | **De verwijderbevestiging heeft geen focusval en geen Escape.** Het zijn twee gewone knoppen in een rij, dus Tab en Enter werken; wat ontbreekt is wat een echte dialoog zou meebrengen. `ha-dialog` bestaat wél op een dashboard, maar zijn sloten zijn in 2026.8 van mwc naar Web Awesome gegaan (`headerTitle`, `footer` in plaats van `primaryAction`/`secondaryAction`) en met de oude namen komen de knoppen als 0 x 0 uit de verf — gemeten in fase 7. Wie dit alsnog wil: gebruik `footer`, en weet dat de kaart zich dan aan de binnenkant van een net verbouwde HA-component bindt | de kaart | bij gelegenheid |
 | **De waarschuwing bij een eindig geluid blijft weg bij een BESTAANDE wekker.** `endless` komt uit `sound/search` en staat niet in de opslag — het is een eigenschap van de provider, niet van de keuze (SPEC 15.6). Wie hem ook wil zien bij het openen van een oude wekker, moet `endless` in de opslag zetten of `alarms/get` het laten meesturen. Aanvaard in fase 4c | SPEC 8.2 / 15.1 | **eigenaar**, als hij het mist |
 | **De provider-as van `endless` is niet live aangetoond**, alleen de soort-as: er is geen streamingprovider op deze instance (fase 0b). Unittests dekken het paar `spotify`/`somafm` op dezelfde soort | `radiomodus.py` | de eigenaar toetst het op zijn eigen HA |

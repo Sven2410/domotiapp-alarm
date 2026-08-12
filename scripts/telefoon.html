@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Telefoonrig</title>
+<!--
+  MEETRIG — een HA-dashboard op een echte telefoonbreedte, in een browservenster
+  dat gemaximaliseerd is en dus niet te verkleinen (fase 4c, en opnieuw fase 9).
+
+  Waarom een iframe. `resize_window` meldt succes op een gemaximaliseerd venster en
+  doet niets; `innerWidth` bleef 1920. Een iframe van 390 px geeft het INGESLOTEN
+  document een viewport van 390 px, en daar hangt alles aan wat we willen meten:
+  media queries, container queries, HA's eigen mobiele omslagpunt en de
+  breedteberekening van Bubble Card. Zelfde origin, dus de sessie van HA (tokens in
+  localStorage) geldt binnen het frame en we kunnen er met JS in lezen.
+
+  Wat het NIET nabootst: devicePixelRatio, touch-invoer, het schermtoetsenbord en de
+  manier waarop een telefoon `<input type="time">` zelf tekent. Zeg dat er dus bij.
+
+  WAAROM name="ha-main-window" — dit is de regel zonder welke de rig stil kapot is.
+  HA's `src/common/dom/get_main_window.ts` kiest zijn "hoofdvenster" zo:
+
+      window.name === "ha-main-window" ? window : parent.name === ... : top
+
+  Zonder de naam valt HA in een frame dus terug op `top`, en dan doet `navigate()`
+  zijn `history.pushState` plus `location-changed` op de RIG in plaats van op HA
+  zelf. Gemeten gevolg in fase 9: een echte klik (isTrusted true) op een Bubble
+  Card-knop met `tap_action: navigate` deed helemaal niets — geen fout, geen
+  hashwijziging, nergens. Met de naam erop werkt de navigatie native en gaat de
+  pop-up open door een gewone klik.
+
+  Gebruik:  /local/telefoon.html#<breedte>|<pad>
+  Voorbeeld: /local/telefoon.html#390|/fase-4a/bubble-echt
+
+  Installeren op de dev-instance:
+      copy scripts\telefoon.html .ha-dev-config\www\telefoon.html
+-->
+<style>
+  html, body { margin: 0; background: #202124; font: 13px system-ui, sans-serif; color: #ddd; }
+  #balk { height: 22px; line-height: 22px; padding: 0 8px; font-variant-numeric: tabular-nums; }
+  #frame { border: 0; display: block; background: #111; }
+</style>
+<div id="balk"></div>
+<iframe id="frame" name="ha-main-window"></iframe>
+<script>
+  const [breedte, pad] = (location.hash.slice(1) || "390|/lovelace/0").split("|");
+  const f = document.getElementById("frame");
+  f.style.width = breedte + "px";
+  f.style.height = (window.innerHeight - 22) + "px";
+  f.src = pad;
+  f.addEventListener("load", () => {
+    const w = f.contentWindow;
+    document.getElementById("balk").textContent =
+      `rig ${breedte}px | innerWidth ${w.innerWidth} | ${pad}`;
+  });
+</script>
