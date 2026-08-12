@@ -143,3 +143,56 @@ def test_afwijking_boven_vijf_procentpunt_breekt_af(gelezen, gezet, verwacht) ->
     geen bewijs dat de gebruiker iets deed. Dat geval hoort bij `available`.
     """
     assert oploop.wijkt_af(gelezen, gezet) is verwacht
+
+
+# --- index_bij: de oploop haalt in (SPEC 9.3, fase 11) ------------------
+
+
+@pytest.mark.parametrize(
+    ("verstreken", "verwacht"),
+    [
+        # Vóór de eerste stap: het begin, niet een fout en niet -1.
+        (0.0, 0),
+        (0.9, 0),
+        # Stap i is verschuldigd op (i+1) seconden.
+        (1.0, 0),
+        (1.9, 0),
+        (2.0, 1),
+        (3.0, 2),
+        # play_media blokkeerde 2,5 s; de eerste tik valt op 3,5 s en dan is stap
+        # 2 verschuldigd. Dit is precies het geval waarvoor deze functie bestaat.
+        (3.5, 2),
+        # De laatste stap valt op aantal * stap_s = 20 s.
+        (20.0, OPLOOP_STAPPEN - 1),
+        # En daarna blijft het de laatste stap; nooit buiten de lijst.
+        (25.0, OPLOOP_STAPPEN - 1),
+        (10_000.0, OPLOOP_STAPPEN - 1),
+    ],
+)
+def test_index_bij_geeft_de_verschuldigde_stap(verstreken, verwacht) -> None:
+    """NIEUW GEDRAG. Faalt op de code van vóór fase 11: de functie bestond niet."""
+    assert oploop.index_bij(verstreken) == verwacht
+
+
+def test_de_oploop_is_op_twintig_seconden_klaar_hoe_laat_hij_ook_begint() -> None:
+    """De eigenschap waar de hele wijziging om draait. NIEUW GEDRAG.
+
+    Voor elke vertraging die `play_media` kan opleveren geldt: op 20 seconden na
+    het bedoelde begin is de laatste stap verschuldigd. Vóór fase 11 begon de
+    oploop pas ná die vertraging en was hij dus op 20 + vertraging klaar —
+    gemeten +22,3 s in fase 3c.
+    """
+    for vertraging in (0.0, 0.5, 2.1, 2.6, 5.0):
+        # De eerste tik valt één stap na het starten, dus vertraging + 1 s.
+        eerste = oploop.index_bij(vertraging + 1.0)
+        assert eerste == int(vertraging), f"vertraging {vertraging}"
+        # En op 20 s is de laatste stap aan de beurt, ongeacht de vertraging.
+        assert oploop.index_bij(20.0) == OPLOOP_STAPPEN - 1
+
+
+def test_index_bij_weigert_een_onzinnige_oploop() -> None:
+    """NIEUW GEDRAG. Zelfde afspraak als `stappen`: liever een fout dan stil raar."""
+    with pytest.raises(ValueError):
+        oploop.index_bij(1.0, aantal=0)
+    with pytest.raises(ValueError):
+        oploop.index_bij(1.0, stap_s=0)

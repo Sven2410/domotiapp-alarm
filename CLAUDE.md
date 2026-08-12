@@ -711,7 +711,14 @@ Vindplaatsen in `docs/fase-7/RAPPORT.md`.
     elkaar op dezelfde knop, en één keer op de gelijksoortige knop van een andere
     rij.** Fase 7 doet zes openingen over vier rijen en telt ze.
 
-62. **De `?v=` op de kaart-URL is GEEN cache-buster tegen HA's service worker.**
+62. **~~De `?v=` op de kaart-URL is GEEN cache-buster tegen HA's service worker.~~
+    GEDEELTELIJK ONJUIST, rechtgezet in fase 11 — lees valkuil 73 erbij.** De
+    `?v=` wérkt wel degelijk op de bundel: HA's service worker zet
+    `matchOptions: {ignoreSearch: true}` alleen op de wortelroute, niet op de
+    file-cache-route. Wat fase 7 mat was een `cache.match(..., {ignoreSearch: true})`
+    van onszelf, en die vlag was van de **lezer**. Wat er wél stuk was staat in
+    valkuil 73: niet de hash, maar de plek waar de hash stond. De oorspronkelijke
+    tekst van deze valkuil, voor de vindplaats:
     Gemeten: `cache.match('…card.js?v=<nieuw>', {ignoreSearch: true})` gaf de
     bundel van een versie eerder terug. En `fetch(url, {cache: 'reload'})` gaat
     door de service worker heen — die vervalt de HTTP-cache, niet de SW-cache; twee
@@ -864,6 +871,46 @@ Vindplaatsen in `docs/fase-10/RAPPORT.md`.
     `/* */`-blokken haalt de backticks ook uit de JSDoc-koppen, en dat is een
     diff van honderden regels die niemand heeft gevraagd.
 
+### Nieuw in fase 11
+
+Vindplaatsen in `docs/fase-11/RAPPORT.md`.
+
+73. **Home Assistant zet de import van een extra module LETTERLIJK in het
+    HTML-document, en dat document wordt gecachet.** Gerenderd ziet het er zo uit:
+
+    ```html
+    <script>import("/domotiapp_alarm/domotiapp-alarm-card.js?v=1724b468f3e9");</script>
+    ```
+
+    De hash staat dus in de HTML, en de HTML valt onder de laatste route van de
+    service worker: `oe(/\/.*/, new he({cacheName: "file-cache", …}))` met `he` =
+    StaleWhileRevalidate en een houdbaarheid van 24 uur. Na een update krijgt de
+    browser dus het document van de vórige versie, met de vórige hash, en die
+    bundel staat nog in de HTTP-cache (`Cache-Control: public, max-age=2678400`).
+    **De klant draait dan de oude kaart achter een nieuwe installatie**, en de
+    nieuwe URL wordt niet één keer opgevraagd.
+
+    Gereproduceerd in fase 11 op een verse instance: 1.0.2 erop, kaart geladen,
+    bijgewerkt naar 1.0.4, gewoon herladen → de browser draaide 1.0.2 (55.503
+    bytes) terwijl de server 1.0.4 (62.903 bytes) serveerde.
+
+    **De uitweg is de enige route die HA's service worker nooit cachet:**
+    `oe(/\/(api|auth)\/.*/, new ue)` met `ue` = NetworkOnly. In `index.html`
+    staat sinds fase 11 een **stabiele lader** op `/api/domotiapp_alarm/loader.js`
+    die de hash van dít moment teruggeeft. Drie eigenschappen, alle drie dragend:
+    zijn URL verandert nooit, hij wordt nooit gecachet (`/api/` plus
+    `Cache-Control: no-store`), en hij importeert dezelfde gehashte URL als de
+    Lovelace-resource zodat beide routes op één modulespecifier uitkomen.
+
+74. **Een installatiepad dat de klant loopt, toets je in de ronde waarin je het
+    bouwt.** Installeren is in fase 5 op een verse instance getoetst; **bijwerken**
+    pas in fase 11 — terwijl dat voor de klant dezelfde handeling is. De fout uit
+    valkuil 73 zat er vanaf fase 1 in, stond de hele tijd in dit bestand met een
+    verkeerde diagnose, en de eigenaar heeft hem drie keer meegemaakt en elke keer
+    "opgelost" door de app volledig af te sluiten. De rig staat klaar:
+    `docker-compose.installatietest.yml` op poort 8130, met de integratie als
+    **kopie** en niet als bind mount.
+
 ```bash
 npm install                # eenmalig
 npm run build              # bundelt src/ -> custom_components/.../frontend/
@@ -973,7 +1020,8 @@ en die draait alleen bij opname in de standaardwinkel. Zie
 | 7 | De prullenbak, en overslaan eruit. De bevinding eerst uitgezocht: het menu opende maar half, en de oorzaak was een `position: fixed; inset: 0`-laag die sinds fase 4a élke klik op de kaart opving (valkuil 60). Het menu is vervangen door één prullenbakknop per rij met een bevestiging die naam en tijd noemt — geen `ha-dialog`, want die is in 2026.8 van mwc naar Web Awesome gegaan en zijn knoppen kwamen als 0 x 0 uit de verf (gemeten). `skip_next` is volledig verwijderd, met een migratie van schemaversie 1 naar 2; live bewezen op een echte oude `.storage`: 4 wekkers, 0 onleesbaar. 314 Python- en 85 JS-tests, 15 mutaties in twee rondes (2 gaten gedicht, 1 mutatie was zelf fout) | gemerged |
 | 8 | **Twee bevindingen uit een bubble card op de telefoon. (1) Afsnijden: de knoppenrij liep 67 px buiten de kaart en het zoekveld werd tot 27 px platgeknepen — `scrollWidth` vond geen van beide (valkuil 63). Voetregel en zoekrij wikkelen nu, en kaart én editor passen zich met een **benoemde** container query aan hun eigen breedte aan (valkuil 64). Gemeten bij 244 px: 0 van de 57 elementen valt nog buiten de kaart. (2) Het voorbeeld zet nu ook de wake-up light aan en zet hem bij het stoppen terug, met dezelfde drie regels als het volume (SPEC 5.4 en 12). Live: `uit → 100 % → uit` en `128 → 255 → 128`. 327 Python- en 85 JS-tests, 14 mutaties in twee rondes (2 gaten gedicht, 1 regel geschrapt als onbereikbaar)** | gemerged, 1.0.2 |
 | 9 | **Bubble Card v3.2.5 op de testinstance en een view `/fase-4a/bubble-echt` met een échte pop-up — de conditie waarin de klant hem gebruikt, en die drie rondes lang niet gemeten was. Daarin gevonden wat `grid_options` niet liet zien: de knop "Verwijderen" van de verwijderbevestiging stak bij een wekker met een lange naam **27 px buiten de kaart en 9 px buiten de pop-up** op 390 px — een deel van de knop van een onomkeerbare handeling was niet aan te wijzen. Fase 8 miste het omdat die meting de bevestiging nooit opende. `.onderrij` wikkelt nu. Ná: 0 buiten kaart én pop-up in vier toestanden over zes breedtes (kaart 394 → 208 px), en de container queries van fase 8 vuren aantoonbaar in de pop-up. **Het tijdveld is opnieuw niet gereproduceerd** — 320 px beschikbaar tegen 129 px nodig; er staan twee vragen open bij de eigenaar. De meetopstelling is vastgelegd (`scripts/telefoon.html`, `scripts/meet-afsnijden.js`, `scripts/bubble-meetopstelling.md`) en is nu werkafspraak. 327 Python- en 85 JS-tests (geen nieuwe: de fout is opmaak), 11 mutaties in twee rondes (1 regel geschrapt, 1 controle aan de meetfunctie toegevoegd)** | gemerged, 1.0.3 |
-| **10** | **De bevinding van de eigenaar op 1.0.3 uitgezocht uit twee screenshots, pixelmatig opgemeten: **iOS past `box-sizing: border-box` niet toe op `input[type="time"]`**, dus `width: 100%` gold voor de contentbox en onze padding en rand kwamen erbovenop — 324 px beschikbaar, 348,9 px getekend, ~9 px voorbij de kaartrand afgeknipt. Niet de cijfers werden afgekapt maar het **veld**. De hele kaart is op dat patroon nagelopen (zeven controls) en de reparatie neemt de klasse weg in plaats van het geval: rand, radius, achtergrond en padding naar een `div.vak`, de control zelf `padding: 0; border: 0`. Plus `text-align: center`, en `box-sizing` expliciet op `.treffer` en `.stopknop` in plaats van leunen op de UA. Bijvangst: de **zoekresultatenlijst** was nooit gemeten en liep bij 208 px 16 px buiten de kaart. `meet-afsnijden.js` heeft een vierde controle (getekend tegen beschikbaar). 327 Python- en 85 JS-tests (weer geen nieuwe), 12 mutaties in twee rondes — M1/M2/M3 bewijzen de diagnose, 1 regel geschrapt** | **deze ronde, PR** |
+| 10 | **De bevinding van de eigenaar op 1.0.3 uitgezocht uit twee screenshots, pixelmatig opgemeten: **iOS past `box-sizing: border-box` niet toe op `input[type="time"]`**, dus `width: 100%` gold voor de contentbox en onze padding en rand kwamen erbovenop — 324 px beschikbaar, 348,9 px getekend, ~9 px voorbij de kaartrand afgeknipt. Niet de cijfers werden afgekapt maar het **veld**. De hele kaart is op dat patroon nagelopen (zeven controls) en de reparatie neemt de klasse weg in plaats van het geval: rand, radius, achtergrond en padding naar een `div.vak`, de control zelf `padding: 0; border: 0`. Plus `text-align: center`, en `box-sizing` expliciet op `.treffer` en `.stopknop` in plaats van leunen op de UA. Bijvangst: de **zoekresultatenlijst** was nooit gemeten en liep bij 208 px 16 px buiten de kaart. `meet-afsnijden.js` heeft een vierde controle (getekend tegen beschikbaar). 327 Python- en 85 JS-tests (weer geen nieuwe), 12 mutaties in twee rondes — M1/M2/M3 bewijzen de diagnose, 1 regel geschrapt** | gemerged, 1.0.4 |
+| **11** | **De afronding. (1) **Valkuil 62 rechtgezet en de echte oorzaak gevonden**: HA zet de import van een extra module letterlijk in het HTML-document, en dát document wordt met StaleWhileRevalidate gecachet — dus stond de hash in iets wat zelf verouderde. Gereproduceerd op een verse instance: na een update van 1.0.2 naar 1.0.4 draaide de browser 1.0.2 en werd de nieuwe URL niet één keer opgevraagd. Opgelost met een **stabiele lader** op `/api/domotiapp_alarm/loader.js`, de enige route die HA's service worker nooit cachet. Ná: een gewone herlaadbeurt levert de nieuwe bundel, zonder de app af te sluiten. Beide laadroutes opnieuw aangetoond. (2) De **updatetest** op 8130 is nu een vaste rig. (3) De volume-oploop **haalt in** en is op +20 s klaar zoals SPEC 9.3 zegt. (4) Drie meldingen die reachability claimden herschreven. (5) README, projectstand en `docs/AANPAK.md`. 346 Python- en 85 JS-tests, 15 mutaties in twee rondes (1 gat gedicht, 1 regel geschrapt, 1 equivalente mutant verantwoord)** | **deze ronde, PR** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -1271,6 +1319,24 @@ staat is de bevestiging op zijn eigen telefoon; de falsifieerbare toets staat in
    `box-sizing: content-box` op de control en kijk of er iets breekt: dat is wat
    iOS doet, en het reproduceerde de fout van de eigenaar op de pixel.
 
+**Wat er staat na fase 11: het product is af, en de laatste fout die een klant
+kon raken zonder dat iemand het merkte is weg.** Een update landt nu bij een
+gewone herlaadbeurt, en dat is op een verse instance aangetoond in plaats van
+beredeneerd. De volume-oploop is op +20 s klaar zoals SPEC 9.3 het altijd al zei.
+
+**De twee regels van fase 11 die je niet mag omdraaien:**
+
+1. **Wat in `index.html` terechtkomt mag geen versie-informatie bevatten.** Het
+   document wordt gecachet; alles wat erin staat veroudert mee. Zet er een
+   stabiel adres in dat de versie zélf ophaalt (valkuil 73).
+2. **Toets bijwerken, niet alleen installeren.** Voor de klant is het dezelfde
+   handeling, en het is de handeling die hij het vaakst doet (valkuil 74).
+
+En één ding om te onthouden over dit bestand zelf: **valkuil 62 was tien fases
+lang fout** en heeft in die tijd het onderzoek naar de echte oorzaak
+tegengehouden. Dat hij te vinden was, komt doordat er een meting bij stond. Zie
+`docs/AANPAK.md` §3.2.
+
 ### Waar de volgende fase begint
 
 `SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **tien** commando's die de
@@ -1351,7 +1417,7 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 |---|---|---|
 | **`music/item_by_uri` als voorkeursroute** zodra MA hem via een gepubliceerde service beschikbaar stelt (SPEC 11.2.2) | `websocket.py` / noodrem | na een MA-release; iemand moet dit volgen |
 | **De lijst providerdomeinen met `SIMILAR_TRACKS`** (SPEC 8.3.1) is een constante die uit MA's broncode is afgeleid en die **stil** kan verouderen. De HTTP 500 van `play_media` wordt sinds fase 3c opgevangen met een terugval zonder `radio_mode`, dus het ergste geval is nu hinderlijk in plaats van stil. Nalopen blijft nodig: staat een provider er onterecht *niet* in, dan stopt het geluid na het item en vangt geen terugval dat op | `const.py` | nalopen bij elke MA-release |
-| **De volume-oploop begint 2,1–2,6 s te laat** doordat `play_media` blokkeert tot MA de stream heeft opgezet. Niet-blokkerend aanroepen kan niet: `core.py:2953-2959` vangt de exceptie binnen HA af, en dan vervallen de `radio_mode`-terugval én de foutmelding. De oploop eerder starten verandert SPEC 9.1 en de betekenis van het `started`-event. **Aanbeveling die niet gebouwd is:** de oploop laten *inhalen* — begin op de stap die bij de verstreken tijd hoort. Meting ligt vast in SPEC 20.1 punt 9 | `afvuren.py` / SPEC 9.1, 9.3 | **beslissing van de eigenaar** |
+| ~~De volume-oploop begint 2,1–2,6 s te laat~~ **OPGELOST in fase 11** met precies de aanbeveling die hier stond: de oploop haalt in. `oploop.index_bij` rekent uit welke stap bij de verstreken tijd hoort, gemeten vanaf het moment dat het volume op 0 gaat — dus vóór `play_media`. De stappenorde, het `started`-event en SPEC 9.1 blijven zoals ze waren; alleen de eerste tik springt vooruit | `afvuren.py` / SPEC 9.3 | gedaan |
 | ~~De tekst bij `sound_gone` claimt te veel~~ **OPGELOST in fase 6**: hij zegt nu "kon niet gestart worden" met de reden van MA erbij | SPEC 11.7 | gedaan |
 | ~~`volume_ramp_unavailable` en `skipped_grace_window` claimen te veel~~ **OPGELOST in fase 6b**, met de voorstellen die de eigenaar heeft goedgekeurd. Het patroon erachter staat nu in valkuil 53 | SPEC 11.7 | gedaan |
 | ~~Shuffle wordt na de wekker niet teruggezet~~ **OPGELOST in fase 6b**: hij gaat terug met dezelfde drie regels als het volume (SPEC 9.6) | `afvuren.py` / SPEC 9.5, 9.6 | gedaan |
@@ -1361,9 +1427,8 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | **De provider-as van `endless` is niet live aangetoond**, alleen de soort-as: er is geen streamingprovider op deze instance (fase 0b). Unittests dekken het paar `spotify`/`somafm` op dezelfde soort | `radiomodus.py` | de eigenaar toetst het op zijn eigen HA |
 | **De tijdkiezer is niet op iOS of Android getoetst.** SPEC 5.2 eist alle drie de platformen. Gemeten is dat `<input type="time">` op desktop met toetsen én kliks werkt en dat `ha-time-input` op het dashboard **niet geladen** is (valkuil 50). Een echt apparaat is nodig | de editor | **eigenaar toetst dit op zijn telefoon** |
 | **De time-out van `sound/search` is nooit opgetreden in een meting.** De tekst uit SPEC 15.6 wordt server-side gezet en door de editor getoond, maar RadioBrowser was deze ronde snel | `websocket.py` / de editor | bij gelegenheid |
-| `getCardSize()` bestaat sinds 4a (1 per rij + 1, en 3 in de stoptoestand) maar is **niet in een masonry-weergave nagemeten**; het dashboard staat in sections-weergave zoals SPEC 20.1 punt 2 voorschrijft | de kaart | 4b of later |
-| `panel: true` niet aangeraakt (`frontend#52570`); voor de stoptoestand inmiddels een vastgelegde beperking (SPEC 20.1 punt 2) | de kaart | 4b of later |
-| **De kaart moet een zoekresultaat uitkleden** vóór `alarms/save`: `album` en `artists` worden geweigerd (valkuil 39) | de editor | **4b** |
+| `getCardSize()` bestaat sinds 4a (1 per rij + 1, en 3 in de stoptoestand) maar is **niet in een masonry-weergave nagemeten**. **Blijft staan** (fase 11): SPEC 20.1 punt 2 schrijft sections voor, de waarde is alleen een hint voor kolomindeling, en het ergste geval is een kaart die iets te hoog of te laag wordt ingeschat. Er is geen klant bekend die masonry gebruikt | de kaart | blijft, tot iemand het meldt |
+| `panel: true` niet aangeraakt (`frontend#52570`). **Blijft staan** (fase 11): het is een openstaand punt in HA zelf en voor de stoptoestand al een vastgelegde beperking (SPEC 20.1 punt 2). Wij kunnen er niets aan doen zonder ons aan een bug van de frontend te binden | de kaart | blijft, hangt aan `frontend#52570` |
 | **Album, artiest en los nummer zijn nooit live AFGESPEELD.** Sinds fase 6 zijn ze wél te **kiezen** en te **zoeken** via MA's `test`-provider (valkuil 54), maar `get_album_tracks` is daar niet geïmplementeerd, dus een album geeft `NotImplementedError`. `playlist` speelt wél en is de basis van de shuffle-meting. Artiest is alleen in Node-tests afgedekt | de editor / `shuffle.py` | de eigenaar toetst het op zijn eigen HA |
 
 Bij de twee kaartpunten in die tabel: `panel: true` staat in DomotiApp Scene als

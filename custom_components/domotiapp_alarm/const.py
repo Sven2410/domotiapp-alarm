@@ -12,6 +12,11 @@ DOMAIN: Final = "domotiapp_alarm"
 CARD_FILENAME: Final = "domotiapp-alarm-card.js"
 CARD_URL_PATH: Final = f"/{DOMAIN}/{CARD_FILENAME}"
 
+# De lader die in index.html terechtkomt (fase 11, zie loader.py). Hij staat
+# onder /api/ omdat HA's service worker dat pad als enige NOOIT cachet, en zijn
+# URL verandert NOOIT — daar berust de hele constructie op.
+LOADER_URL_PATH: Final = f"/api/{DOMAIN}/loader.js"
+
 # De tweede laadroute. `module` is het enige type dat een ES-module importeert.
 RESOURCE_TYPE: Final = "module"
 
@@ -22,6 +27,9 @@ HASH_LENGTE: Final = 12
 # --- Sleutels in hass.data[DOMAIN] --------------------------------------
 DATA_STATIC_PATH_REGISTERED: Final = "static_path_registered"
 DATA_JS_URL: Final = "js_url"
+# Dubbele rol, en dat is met opzet: de aanwezigheid van de sleutel zegt dat de
+# view geregistreerd is, de waarde is de hash die hij moet teruggeven.
+DATA_LOADER_REGISTERED: Final = "loader_hash"
 DATA_ENTRY_COUNT: Final = "entry_count"
 DATA_RESOURCE_ID: Final = "resource_id"
 DATA_STORE: Final = "store"

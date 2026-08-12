@@ -93,12 +93,24 @@ def tekst_voor(kind: str, wekker: dict[str, Any], **extra: str) -> str:
     lamp = extra.get("lamp_naam") or ((wekker.get("light") or {}).get("entity_id") or "de lamp")
 
     if kind == KIND_SPEAKER_UNAVAILABLE:
+        # Was: "was niet bereikbaar". Bereikbaarheid is een uitspraak over het
+        # netwerk, en die doet de code nergens. Wat `noodrem.py:101-102` vaststelt
+        # is dat de state van de entiteit `unavailable` is of helemaal ontbreekt —
+        # dat is Home Assistants eigen woord en verder niets.
         return (
             f"De wekker van {tijd} is niet afgegaan: de speaker '{speaker}' was niet "
-            "bereikbaar."
+            "beschikbaar in Home Assistant."
         )
     if kind == KIND_MA_UNAVAILABLE:
-        return f"De wekker van {tijd} is niet afgegaan: Music Assistant was niet bereikbaar."
+        # Was: "Music Assistant was niet bereikbaar". Ook dat is een uitspraak over
+        # een server. `noodrem.py:108` kijkt naar `async_loaded_entries(MA_DOMAIN)`
+        # en weet daarmee precies één ding: er is geen geladen MA-config-entry. Dat
+        # kan ook betekenen dat MA niet geïnstalleerd is of dat de entry uitstaat,
+        # en dan wees de oude tekst de klant de verkeerde kant op.
+        return (
+            f"De wekker van {tijd} is niet afgegaan: de Music Assistant-integratie "
+            "is niet actief in Home Assistant."
+        )
     if kind == KIND_SOUND_GONE:
         # De reden die MA meegaf, tussen haakjes achter de vaststelling. Ontbreekt
         # hij, dan staat er niets — geen leeg haakje en geen verzonnen oorzaak.

@@ -101,8 +101,10 @@ te wijzigen.
 | **Wake-up light** | optioneel: een lamp plus een helderheid |
 
 De knop **Voorbeeld** speelt het gekozen geluid meteen af op de gekozen speaker,
-op het ingestelde volume en zonder oploop, zodat je kunt horen of het bevalt. Hij
-stopt zodra je de editor sluit.
+op het ingestelde volume en zonder oploop, zodat je kunt horen of het bevalt. Heb
+je een wake-up light gekozen, dan gaat die er ook bij aan op de ingestelde
+helderheid — zo zie je meteen of 100 % niet te fel is. Het voorbeeld stopt zodra
+je de editor sluit, en de lamp gaat dan terug zoals hij stond.
 
 **Radio en afspeellijsten zijn de beste keuze voor een wekker**, want die houden
 niet uit zichzelf op. Kies je iets dat wél ophoudt — een los nummer of een
@@ -111,11 +113,12 @@ aflevering — dan waarschuwt de editor dat het na een paar minuten stil is.
 In de lijst kun je per wekker:
 
 - de **schakelaar** omzetten om hem aan of uit te zetten;
-- via de drie puntjes **Overslaan** kiezen: de eerstvolgende keer slaat hij over
-  en daarna gaat hij gewoon weer af;
-- via de drie puntjes **Verwijderen** kiezen, met een bevestiging.
+- op het **prullenbakje** tikken om hem te verwijderen. Er verschijnt eerst een
+  vraag met de naam en de tijd erin, zodat je ziet welke wekker je weggooit.
 
-Onderaan staat wanneer de eerstvolgende wekker afgaat.
+Tik je op de rij zelf, dan gaat de wekker open om hem te wijzigen.
+
+**Bovenaan** staat wanneer de eerstvolgende wekker afgaat, met de plusknop ernaast.
 
 Ging er 's nachts iets mis, dan staat dat 's ochtends op de kaart bij de
 betreffende wekker, met een knop **Begrepen** om het weg te halen.
@@ -141,6 +144,13 @@ import. Dan toont elk dashboard "Configuratiefout". De resource dekt dat geval a
 Zie hem in **Instellingen → Dashboards → drie puntjes → Bronnen**; hij wijst naar
 `/domotiapp_alarm/domotiapp-alarm-card.js`. Weghalen mag pas als je hem opnieuw
 laat aanmaken door de integratie te herladen.
+
+**Na een update hoef je de app niet af te sluiten.** Home Assistant bewaart de
+pagina waarop je binnenkomt in de cache van zijn service worker, en tot versie
+1.0.4 stond het adres van de kaart in díe pagina — waardoor je na het bijwerken
+nog even de oude kaart kon krijgen. Sinds 1.0.5 staat daar alleen een verwijzing
+die nooit gecachet wordt, en die haalt bij elke keer laden de juiste versie op.
+Herladen is genoeg.
 
 **In safe mode gaat er geen wekker af.** Home Assistant laadt in safe mode geen
 custom integrations, dus ook deze niet: geen planning, geen geluid, geen kaart.

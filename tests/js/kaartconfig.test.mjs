@@ -119,6 +119,24 @@ describe("personToestand (SPEC 16.3)", () => {
     assert.equal(goed.isFout, false);
   });
 
+  it("beweert niet dat de persoon verwijderd is (REGRESSIEWACHT)", () => {
+    // Fase 11, na goedkeuring van de eigenaar. De kaart stelt vast dat de
+    // entiteit ontbreekt; of hij verwijderd dan wel HERNOEMD is, weet ze niet —
+    // SPEC 18.1 zegt dat zelf. Een tekst die "bestaat niet meer" zegt kiest er
+    // een van twee en stuurt de klant bij een hernoeming naar het verkeerde
+    // scherm. Zelfde patroon als sound_gone in fase 6 (valkuil 53).
+    //
+    // REGRESSIEWACHT en geen NIEUW GEDRAG: hij houdt een beslissing vast, en op
+    // de oude tekst faalt hij ook — maar dat komt doordat de tekst zelf de
+    // wijziging is, niet doordat er gedrag bij is gekomen.
+    assert.ok(
+      !/bestaat niet meer/i.test(TEKST_PERSOON_WEG),
+      `de tekst mag geen verwijdering claimen: ${TEKST_PERSOON_WEG}`,
+    );
+    // Positieve controle: er staat wél iets, en het gaat over de persoon.
+    assert.match(TEKST_PERSOON_WEG, /persoon/i);
+  });
+
   it("laat een lege person als ontbrekend gelden (NIEUW GEDRAG)", () => {
     assert.equal(personToestand("", true).soort, "ontbreekt");
     assert.equal(personToestand(null, true).soort, "ontbreekt");

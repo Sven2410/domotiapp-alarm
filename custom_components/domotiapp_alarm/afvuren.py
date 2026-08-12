@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -93,6 +94,13 @@ from .const import (
 from .noodrem import Uitkomst
 
 _LOGGER = logging.getLogger(__name__)
+
+# De klok van de oploop, als losse naam en niet als `time.monotonic()` op de
+# plek van gebruik. Reden: een test moet een trage `play_media` kunnen nabootsen,
+# en `monkeypatch.setattr(time, "monotonic", ...)` zou de klok van asyncio zelf
+# omzetten — dan lopen HA's eigen timers mee en meet je iets anders dan je denkt.
+# Deze naam is van ons, dus een test kan hem veilig vervangen.
+_klok = time.monotonic
 
 # Sleutels in de context per afgaande wekker (`abonnement.Register.actief`).
 CTX_PERSON = "person"
@@ -177,7 +185,7 @@ async def async_laat_afgaan(
     uitkomst, soort = noodrem.controleer_speaker(hass, speaker)
     if uitkomst is Uitkomst.FOUT:
         _LOGGER.warning(
-            "Wekker %s gaat NIET af: speaker %s is niet bereikbaar", alarm_id, speaker
+            "Wekker %s gaat NIET af: speaker %s is niet beschikbaar", alarm_id, speaker
         )
         await _async_faal(hass, registry_id, person_entity_id, wekker, soort)
         return
@@ -198,6 +206,11 @@ async def async_laat_afgaan(
 
     # --- stap 3: volume op 0 -------------------------------------------
     doel_pct = int(wekker.get("volume_pct") or 0)
+    # Het NULPUNT van de oploop. Bewust hier en niet bij stap 7: daartussen zit
+    # `play_media`, dat 2,1-2,6 s blokkeert (fase 3c). Meet je vanaf stap 7, dan
+    # duurt de oploop 20 s NA die vertraging; meet je vanaf hier, dan is hij op
+    # +20 s klaar zoals SPEC 9.3 het zegt. Zie oploop.index_bij.
+    oploop_t0 = _klok()
     oploop_kan = await async_zet_volume(hass, speaker, 0)
     if not oploop_kan:
         # De speaker neemt geen volume aan. De wekker gaat wél af — het geluid is de
@@ -286,7 +299,7 @@ async def async_laat_afgaan(
 
     # --- stap 7: de volume-oploop (SPEC 9.3) ---------------------------
     if oploop_kan:
-        loop = _Oploop(hass, registry_id, alarm_id, speaker, doel_pct)
+        loop = _Oploop(hass, registry_id, alarm_id, speaker, doel_pct, oploop_t0)
         context[CTX_OPLOOP] = loop
         loop.start()
     else:
@@ -616,6 +629,7 @@ class _Oploop:
         "_laatst_gezet",
         "_registry_id",
         "_speaker",
+        "_t0",
         "_unsub",
         "_waarden",
     )
@@ -627,12 +641,15 @@ class _Oploop:
         alarm_id: str,
         speaker: str,
         doel_pct: int,
+        t0: float,
     ) -> None:
         self._hass = hass
         self._registry_id = registry_id
         self._alarm_id = alarm_id
         self._speaker = speaker
         self._waarden = oploop_mod.stappen(doel_pct)
+        # Het bedoelde begin van de oploop, op de monotone klok. Zie index_bij.
+        self._t0 = t0
         self._index = 0
         # Wat de oploop het laatst zélf heeft gezet. Stap 3 van de afvuurvolgorde zette
         # 0, dus daar begint de vergelijking.
@@ -687,8 +704,16 @@ class _Oploop:
             )
             return
 
-        gezet = self._waarden[self._index]
-        self._index += 1
+        # INHALEN (fase 11): de stap volgt uit de verstreken tijd, niet uit een
+        # teller. Liep `play_media` uit, dan slaat de oploop de gemiste stappen
+        # over en is hij alsnog op +20 s klaar. `max` met de eigen teller houdt
+        # hem monotoon: terugvallen zou het volume hoorbaar laten zakken.
+        verschuldigd = oploop_mod.index_bij(
+            _klok() - self._t0, len(self._waarden)
+        )
+        index = max(verschuldigd, self._index)
+        gezet = self._waarden[index]
+        self._index = index + 1
         await async_zet_volume(self._hass, self._speaker, gezet)
         self._laatst_gezet = gezet
 

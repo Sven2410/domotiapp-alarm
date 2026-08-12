@@ -164,7 +164,10 @@ async def async_start(
     if uitkomst is Uitkomst.FOUT:
         raise VoorbeeldGeweigerd(
             soort or "speaker_unavailable",
-            f"De speaker '{_naam(hass, speaker)}' is niet bereikbaar.",
+            # Zelfde correctie als in meldingen.py (fase 11): de noodrem stelt
+            # vast dat de state `unavailable` is of ontbreekt, niet dat er iets
+            # onbereikbaar is over het netwerk.
+            f"De speaker '{_naam(hass, speaker)}' is niet beschikbaar in Home Assistant.",
         )
 
     uri = (geluid or {}).get("uri")

@@ -111,12 +111,38 @@ heeft bewust geen `version`. Zie `docs/fase-1/RAPPORT.md`, taak A.
                     └─────────────────────────────────────────┘
 ```
 
-**De laadketen staat en verandert niet.** De integratie serveert haar bundel op
-`/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>` en registreert die URL
-langs **twee** routes: `add_extra_js_url` (voor HA's ingebouwde panelen) en een
-Lovelace-resource (voor een browser met een verouderde `index.html` in zijn
-service-workercache). Eén URL, twee routes, één ophaling. Zie
-`docs/fase-1/RAPPORT.md` taak G en H, en `resource.py`.
+**De laadketen.** De integratie serveert haar bundel op
+`/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>` en laat de browser die
+URL langs **twee** routes vinden: `add_extra_js_url` (voor HA's ingebouwde
+panelen) en een Lovelace-resource (voor een browser met een verouderde
+`index.html` in zijn service-workercache). Eén bundel-URL, twee routes, één
+ophaling. Zie `docs/fase-1/RAPPORT.md` taak G en H, en `resource.py`.
+
+**Wat er in `index.html` staat is sinds fase 11 niet de bundel-URL zelf maar een
+stabiele lader**, en dat is een correctie op de zin die hier eerst stond ("de
+laadketen staat en verandert niet"). Home Assistant zet de import letterlijk in
+het HTML-document, en dat document wordt door de service worker met
+StaleWhileRevalidate gecachet. Na een update kreeg de klant daardoor het
+document van de vórige versie terug, met de vórige hash erin — en dus de oude
+kaart achter een nieuwe installatie. Dat is op een verse instance gereproduceerd
+(`docs/fase-11/RAPPORT.md`).
+
+De lader staat op `/api/domotiapp_alarm/loader.js`. Drie eigenschappen, en ze
+zijn alle drie dragend:
+
+1. **Zijn URL verandert nooit**, dus een verouderd document wijst er nog steeds
+   naar.
+2. **Hij wordt nooit gecachet**: `/api/` is de enige route die HA's service
+   worker met NetworkOnly afhandelt, en `Cache-Control: no-store` sluit de
+   HTTP-cache van de browser uit.
+3. **Hij importeert dezelfde gehashte URL als de Lovelace-resource**, zodat
+   beide routes op één modulespecifier uitkomen en de bundel één keer wordt
+   opgehaald en geëvalueerd.
+
+De `?v=` blijft dus wat hij was — een cachebuster op de bundel, en een die
+wérkt: HA's service worker zet `ignoreSearch` alleen op de wortelroute en niet
+op de file-cache. Wat eraan ontbrak was dat de plek waar die hash stond zelf
+gecachet werd.
 
 De tweede route is **tijdelijk bedoeld**. Landt `frontend#53208` of
 `core#176912` in een HA-release, dan kan hij eruit en is `homeassistant` in
@@ -2450,8 +2476,16 @@ persoon daarna kiest.
   kaartinstellingen."** Geen fout, geen rode tekst: dit is de toestand direct na
   toevoegen.
 - **`person` verwijst naar een niet-bestaande entiteit** — de kaart toont
-  **"De gekozen persoon bestaat niet meer."** in foutkleur. Zie
+  **"De gekozen persoon is niet gevonden."** in foutkleur. Zie
   [sectie 18.1](#181-de-person-entiteit-wordt-hernoemd-of-verwijderd).
+
+  De tekst luidde tot fase 11 *"De gekozen persoon bestaat niet meer."* en is
+  gewijzigd omdat hij meer beweerde dan de kaart vaststelt. Wat de kaart weet is
+  dat `hass.states[person]` ontbreekt; of de persoon **verwijderd** dan wel
+  **hernoemd** is, valt daar niet uit af te leiden — [18.1](#181-de-person-entiteit-wordt-hernoemd-of-verwijderd)
+  zegt dat zelf. Bij een hernoeming stuurde de oude tekst de klant naar het
+  verkeerde scherm. "Niet gevonden" dekt beide gevallen en wijst naar de
+  kaartinstellingen, waar de oplossing in allebei de gevallen zit.
 - **`person` zit niet in het `person`-domein** — `setConfig` gooit, zoals
   Lovelace verwacht bij een ongeldige config. Dit is de enige plek waar de kaart
   mag gooien, en het is wat Lovelace als "Configuratiefout" toont.
@@ -2507,7 +2541,9 @@ zien.
 2. De planning van die wekkers wordt **opgezegd** — een wekker voor een
    niet-bestaande persoon gaat niet af. De integratie luistert daarvoor op
    `EVENT_ENTITY_REGISTRY_UPDATED` met `action == "remove"`.
-3. De kaart toont **"De gekozen persoon bestaat niet meer."**
+3. De kaart toont **"De gekozen persoon is niet gevonden."** — dezelfde tekst als
+   bij een hernoeming, en dat is met opzet: de kaart kan de twee niet
+   onderscheiden (zie [16.3](#163-wat-de-kaart-doet-zonder-geldige-person)).
 4. Wordt de persoon opnieuw aangemaakt, dan krijgt hij een **nieuw**
    registry-entry-ID en begint hij met een lege wekkerlijst. De oude regels
    blijven staan. Dat is hetzelfde gedrag als bij DomotiApp Scene en het moet in
