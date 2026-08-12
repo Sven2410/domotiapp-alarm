@@ -816,6 +816,54 @@ Vindplaatsen in `docs/fase-9/RAPPORT.md`.
     afkappen tellen niet mee. Zonder die twee filters meldde de eerste versie er
     dertien op een rij, allemaal terecht afgekapt.
 
+### Nieuw in fase 10
+
+Vindplaatsen in `docs/fase-10/RAPPORT.md`.
+
+70. **Native formuliercontrols zijn de ENIGE plek waar een desktopmeting niet
+    overdraagt — en de regel die dat afdekt is: geef een control die
+    `width: 100%` krijgt nooit zelf padding of een rand.** Zet die op een wrapper
+    en laat de control `padding: 0; border: 0` houden; dan zijn contentbox en
+    borderbox per constructie gelijk en doet het boxmodel er niet meer toe.
+
+    **Waarom `box-sizing: border-box` declareren niet genoeg is.** Wij deden dat,
+    en **iOS past het niet toe op `input[type="time"]`**. Gemeten op de iPhone van
+    de eigenaar (scherm 393 CSS px, kaart 356,4, binnenruimte 324,0): het naamveld
+    en de `select` eindigden netjes op 358,5, het tijdveld op **372,6** — een veld
+    van 348,9 px waar er 324,0 beschikbaar was, precies `324 + 2×12 + 2×1 = 350`.
+    Zichtbaar als een veld zonder afgeronde rechterhoek en een tijd 12,5 px uit
+    het midden; níet als afgekapte cijfers.
+
+    **En op Chrome is diezelfde code aantoonbaar goed** (320 px getekend bij 320 px
+    beschikbaar). Fase 8 en 9 hebben er in een echte Bubble-pop-up overheen
+    gekeken, niet uit slordigheid maar omdat de engine hem niet maakt. Simuleer hem
+    door `box-sizing: content-box` op de control te zetten: dat reproduceert het
+    iOS-gedrag op de desktop, en fase 10 kreeg er dezelfde +26 px mee als op de
+    telefoon.
+
+    Let op wie de `box-sizing` levert. `button` krijgt `border-box` uit de
+    **UA-stylesheet van Chrome**, niet van ons — gemeten bij `.treffer` (303/303) en
+    `.stopknop` (352/352). Dat is een standaard van de browser en geen afspraak;
+    declareer hem zelf. Een `input[type="range"]` staat op `content-box` en is tóch
+    goed, want hij draagt geen padding en geen rand — wat laat zien dat de padding
+    de kwaal is en niet het boxmodel.
+
+71. **Meet niet alleen waar iets UITKOMT maar ook hoe breed het GETEKEND is.** De
+    drie controles van fase 8 en 9 kijken naar de positie ten opzichte van de kaart
+    en de pop-up, en zien een fout dus pas als hij aan de buitenkant zichtbaar
+    wordt — en dat is per engine anders. Een element dat 26 px te breed is maar
+    toevallig ruimte heeft, valt nergens buiten. `meet-afsnijden.js` vergelijkt
+    sinds fase 10 daarom ook de borderbox van elk kind met de contentbox van zijn
+    ouder. Dat meet de **oorzaak** in plaats van het gevolg.
+
+72. **Backticks in een CSS-commentaar breken de `css`-template.** Twee rondes op
+    rij (9 en 10) faalde `npm run build` met `Expected ";" but found "width"`,
+    omdat een comment binnen `` css`...` `` een backtick bevatte en de template
+    daar eindigt. Schrijf in die blokken `width 100%` in plaats van
+    `` `width: 100%` ``. En repareer het **gericht**: een `sed`/regex over álle
+    `/* */`-blokken haalt de backticks ook uit de JSDoc-koppen, en dat is een
+    diff van honderden regels die niemand heeft gevraagd.
+
 ```bash
 npm install                # eenmalig
 npm run build              # bundelt src/ -> custom_components/.../frontend/
@@ -924,7 +972,8 @@ en die draait alleen bij opname in de standaardwinkel. Zie
 | 6b | Vier bevindingen. (1) Het overloopmenu bleef onder de kaart hangen — HA heeft géén bruikbare menu-component (gemeten), dus een eigen `position: fixed` menu dat omhoog klapt en binnen de kaart blijft; gemeten op 373 px: was 71 px buiten de kaart, is nu 57 px erbinnen. (2) De kopbalk met de eerstvolgende wektijd en de plusknop staat nu **boven** de lijst; de lege staat ís die kopbalk (SPEC 3.1–3.3). (3) De laatste twee liegende teksten herschreven, mét het patroon erachter (SPEC 11.7). (4) Shuffle gaat na de wekker terug naar wat het was, met de drie regels van SPEC 9.5; live `false → true → false`. 308 Python- en 91 JS-tests, 23 mutaties in twee rondes (2 gaten gedicht) | gemerged, 1.0.1 |
 | 7 | De prullenbak, en overslaan eruit. De bevinding eerst uitgezocht: het menu opende maar half, en de oorzaak was een `position: fixed; inset: 0`-laag die sinds fase 4a élke klik op de kaart opving (valkuil 60). Het menu is vervangen door één prullenbakknop per rij met een bevestiging die naam en tijd noemt — geen `ha-dialog`, want die is in 2026.8 van mwc naar Web Awesome gegaan en zijn knoppen kwamen als 0 x 0 uit de verf (gemeten). `skip_next` is volledig verwijderd, met een migratie van schemaversie 1 naar 2; live bewezen op een echte oude `.storage`: 4 wekkers, 0 onleesbaar. 314 Python- en 85 JS-tests, 15 mutaties in twee rondes (2 gaten gedicht, 1 mutatie was zelf fout) | gemerged |
 | 8 | **Twee bevindingen uit een bubble card op de telefoon. (1) Afsnijden: de knoppenrij liep 67 px buiten de kaart en het zoekveld werd tot 27 px platgeknepen — `scrollWidth` vond geen van beide (valkuil 63). Voetregel en zoekrij wikkelen nu, en kaart én editor passen zich met een **benoemde** container query aan hun eigen breedte aan (valkuil 64). Gemeten bij 244 px: 0 van de 57 elementen valt nog buiten de kaart. (2) Het voorbeeld zet nu ook de wake-up light aan en zet hem bij het stoppen terug, met dezelfde drie regels als het volume (SPEC 5.4 en 12). Live: `uit → 100 % → uit` en `128 → 255 → 128`. 327 Python- en 85 JS-tests, 14 mutaties in twee rondes (2 gaten gedicht, 1 regel geschrapt als onbereikbaar)** | gemerged, 1.0.2 |
-| **9** | **Bubble Card v3.2.5 op de testinstance en een view `/fase-4a/bubble-echt` met een échte pop-up — de conditie waarin de klant hem gebruikt, en die drie rondes lang niet gemeten was. Daarin gevonden wat `grid_options` niet liet zien: de knop "Verwijderen" van de verwijderbevestiging stak bij een wekker met een lange naam **27 px buiten de kaart en 9 px buiten de pop-up** op 390 px — een deel van de knop van een onomkeerbare handeling was niet aan te wijzen. Fase 8 miste het omdat die meting de bevestiging nooit opende. `.onderrij` wikkelt nu. Ná: 0 buiten kaart én pop-up in vier toestanden over zes breedtes (kaart 394 → 208 px), en de container queries van fase 8 vuren aantoonbaar in de pop-up. **Het tijdveld is opnieuw niet gereproduceerd** — 320 px beschikbaar tegen 129 px nodig; er staan twee vragen open bij de eigenaar. De meetopstelling is vastgelegd (`scripts/telefoon.html`, `scripts/meet-afsnijden.js`, `scripts/bubble-meetopstelling.md`) en is nu werkafspraak. 327 Python- en 85 JS-tests (geen nieuwe: de fout is opmaak), 11 mutaties in twee rondes (1 regel geschrapt, 1 controle aan de meetfunctie toegevoegd)** | **deze ronde, PR** |
+| 9 | **Bubble Card v3.2.5 op de testinstance en een view `/fase-4a/bubble-echt` met een échte pop-up — de conditie waarin de klant hem gebruikt, en die drie rondes lang niet gemeten was. Daarin gevonden wat `grid_options` niet liet zien: de knop "Verwijderen" van de verwijderbevestiging stak bij een wekker met een lange naam **27 px buiten de kaart en 9 px buiten de pop-up** op 390 px — een deel van de knop van een onomkeerbare handeling was niet aan te wijzen. Fase 8 miste het omdat die meting de bevestiging nooit opende. `.onderrij` wikkelt nu. Ná: 0 buiten kaart én pop-up in vier toestanden over zes breedtes (kaart 394 → 208 px), en de container queries van fase 8 vuren aantoonbaar in de pop-up. **Het tijdveld is opnieuw niet gereproduceerd** — 320 px beschikbaar tegen 129 px nodig; er staan twee vragen open bij de eigenaar. De meetopstelling is vastgelegd (`scripts/telefoon.html`, `scripts/meet-afsnijden.js`, `scripts/bubble-meetopstelling.md`) en is nu werkafspraak. 327 Python- en 85 JS-tests (geen nieuwe: de fout is opmaak), 11 mutaties in twee rondes (1 regel geschrapt, 1 controle aan de meetfunctie toegevoegd)** | gemerged, 1.0.3 |
+| **10** | **De bevinding van de eigenaar op 1.0.3 uitgezocht uit twee screenshots, pixelmatig opgemeten: **iOS past `box-sizing: border-box` niet toe op `input[type="time"]`**, dus `width: 100%` gold voor de contentbox en onze padding en rand kwamen erbovenop — 324 px beschikbaar, 348,9 px getekend, ~9 px voorbij de kaartrand afgeknipt. Niet de cijfers werden afgekapt maar het **veld**. De hele kaart is op dat patroon nagelopen (zeven controls) en de reparatie neemt de klasse weg in plaats van het geval: rand, radius, achtergrond en padding naar een `div.vak`, de control zelf `padding: 0; border: 0`. Plus `text-align: center`, en `box-sizing` expliciet op `.treffer` en `.stopknop` in plaats van leunen op de UA. Bijvangst: de **zoekresultatenlijst** was nooit gemeten en liep bij 208 px 16 px buiten de kaart. `meet-afsnijden.js` heeft een vierde controle (getekend tegen beschikbaar). 327 Python- en 85 JS-tests (weer geen nieuwe), 12 mutaties in twee rondes — M1/M2/M3 bewijzen de diagnose, 1 regel geschrapt** | **deze ronde, PR** |
 
 **Wat er staat na fase 1:** een integratie die haar eigen bundel serveert op
 `/domotiapp_alarm/domotiapp-alarm-card.js?v=<bundelhash>`, die URL langs twee
@@ -1205,6 +1254,23 @@ een smalle kolom in het sections-grid.
    maat is steeds de **kaart** — en sinds fase 9 ook de **pop-up**, want een kaart
    kan binnen zijn eigen grenzen passen en er tóch buiten vallen.
 
+**Wat er staat na fase 10:** de kaart heeft geen enkel native formuliercontrol meer
+dat zelf padding of een rand draagt terwijl het `width: 100%` krijgt. Daarmee is de
+bevinding van de eigenaar weg én de klasse waar hij toe behoorde. Wat nog niet vast
+staat is de bevestiging op zijn eigen telefoon; de falsifieerbare toets staat in
+`docs/fase-10/RAPPORT.md`.
+
+**De twee regels van fase 10 die je niet mag omdraaien:**
+
+1. **Padding en rand horen op het vak, niet op de control.** Niet omdat iOS raar
+   doet, maar omdat je dan niet meer hoeft te weten wat welke engine met het
+   boxmodel doet. `box-sizing: border-box` declareren is géén garantie — dat is
+   gemeten (valkuil 70).
+2. **Wat je op een desktop meet, geldt niet voor een native control.** Alle andere
+   opmaak wel; deze niet. Wil je hem tóch op een desktop toetsen, zet dan
+   `box-sizing: content-box` op de control en kijk of er iets breekt: dat is wat
+   iOS doet, en het reproduceerde de fout van de eigenaar op de pixel.
+
 ### Waar de volgende fase begint
 
 `SPEC.md` is bindend en volledig. SPEC 15 beschrijft de **tien** commando's die de
@@ -1289,7 +1355,7 @@ Staat de MA-koppeling na een herstart niet meer: opnieuw toevoegen met URL
 | ~~De tekst bij `sound_gone` claimt te veel~~ **OPGELOST in fase 6**: hij zegt nu "kon niet gestart worden" met de reden van MA erbij | SPEC 11.7 | gedaan |
 | ~~`volume_ramp_unavailable` en `skipped_grace_window` claimen te veel~~ **OPGELOST in fase 6b**, met de voorstellen die de eigenaar heeft goedgekeurd. Het patroon erachter staat nu in valkuil 53 | SPEC 11.7 | gedaan |
 | ~~Shuffle wordt na de wekker niet teruggezet~~ **OPGELOST in fase 6b**: hij gaat terug met dezelfde drie regels als het volume (SPEC 9.6) | `afvuren.py` / SPEC 9.5, 9.6 | gedaan |
-| **Het tijdveld in de editor is niet op een telefoon getoetst.** In fase 9 opnieuw geprobeerd, nu in een échte Bubble Card-pop-up: op 390 px is er **320 px beschikbaar en 129 px nodig**, en zelfs op lettergrootte 36 px past het (172 px). Het kán op deze renderer niet afkappen. Wat overblijft is wat de rig niet nabootst: de telefoon tekent `<input type="time">` zelf. **Twee vragen staan open bij de eigenaar** (`docs/fase-9/RAPPORT.md`): een screenshot met de ontwikkelaarstools op het veld, én — goedkoper — of hij de ándere reparaties van fase 8 wél ziet. Zo niet, dan draait zijn telefoon een oude bundel achter een nieuwe `?v=` (valkuil 62) en is dát het antwoord | de editor | **eigenaar toetst dit op zijn telefoon** |
+| ~~Het tijdveld in de editor is niet op een telefoon getoetst~~ **OORZAAK GEVONDEN in fase 10**, uit twee screenshots pixelmatig opgemeten: iOS past `box-sizing: border-box` niet toe op `input[type="time"]` (valkuil 70). Gerepareerd door de padding en de rand naar een wrapper te verhuizen. **Wat nog openstaat is de bevestiging op het toestel zelf**: het veld moet rechts een zichtbare afgeronde hoek hebben en de marge links en rechts moet even groot zijn | de editor | **eigenaar toetst de reparatie op zijn telefoon** |
 | **De verwijderbevestiging heeft geen focusval en geen Escape.** Het zijn twee gewone knoppen in een rij, dus Tab en Enter werken; wat ontbreekt is wat een echte dialoog zou meebrengen. `ha-dialog` bestaat wél op een dashboard, maar zijn sloten zijn in 2026.8 van mwc naar Web Awesome gegaan (`headerTitle`, `footer` in plaats van `primaryAction`/`secondaryAction`) en met de oude namen komen de knoppen als 0 x 0 uit de verf — gemeten in fase 7. Wie dit alsnog wil: gebruik `footer`, en weet dat de kaart zich dan aan de binnenkant van een net verbouwde HA-component bindt | de kaart | bij gelegenheid |
 | **De waarschuwing bij een eindig geluid blijft weg bij een BESTAANDE wekker.** `endless` komt uit `sound/search` en staat niet in de opslag — het is een eigenschap van de provider, niet van de keuze (SPEC 15.6). Wie hem ook wil zien bij het openen van een oude wekker, moet `endless` in de opslag zetten of `alarms/get` het laten meesturen. Aanvaard in fase 4c | SPEC 8.2 / 15.1 | **eigenaar**, als hij het mist |
 | **De provider-as van `endless` is niet live aangetoond**, alleen de soort-as: er is geen streamingprovider op deze instance (fase 0b). Unittests dekken het paar `spotify`/`somafm` op dezelfde soort | `radiomodus.py` | de eigenaar toetst het op zijn eigen HA |

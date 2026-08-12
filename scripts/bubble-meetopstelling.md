@@ -93,6 +93,20 @@ w.dispatchEvent(new w.CustomEvent('location-changed',
 Dat is letterlijk wat HA's eigen `navigate()` doet. Het is **programmatisch** —
 meld dat, net als bij valkuil 11. Alles ná het openen is met echte kliks te doen.
 
+**En reken op weerstand** (fase 10). Drie dingen die tijd kosten als je ze niet weet:
+
+- **HA's sections-view rendert lui.** Na een harde herlaadbeurt staan de
+  bubble-kaarten er soms 15 seconden niet, en `hui-grid-section` meldt dan nul
+  kinderen. Wachten helpt; een tabwissel (klik op een andere view en terug) wekt ze
+  meteen.
+- **Een pop-up die dicht is geweest komt niet altijd terug.** Bubble breekt de
+  inhoud af bij het sluiten en bouwt hem daarna niet in alle gevallen opnieuw. De
+  betrouwbare weg is de hele rigpagina opnieuw laden.
+- **Meet je in de gesloten stand, dan zijn de HORIZONTALE maten nog geldig.** Bubble
+  verplaatst de pop-up puur verticaal (`transform: matrix(1,0,0,1,0,777)`). Zeg er
+  dan wel bij dat hij dicht was, en toon dat de getallen gelijk zijn aan die van de
+  open stand.
+
 Meten:
 
 ```js

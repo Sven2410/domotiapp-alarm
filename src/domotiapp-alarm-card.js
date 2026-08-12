@@ -679,6 +679,12 @@ class DomotiappAlarmCard extends LitElement {
     button.stopknop {
       display: block;
       width: 100%;
+      /* width 100% met eigen padding van 16 px links en rechts — dezelfde vorm die
+         in fase 10 op iOS bij het tijdveld misging. Chrome geeft een button
+         border-box uit zijn UA-stylesheet (gemeten in de stoptoestand: 352 px
+         getekend bij 352 px beschikbaar), maar op die standaard willen we niet
+         leunen bij de knop die de wekker uitzet. */
+      box-sizing: border-box;
       border: none;
       border-radius: var(--ha-card-border-radius, 12px);
       cursor: pointer;

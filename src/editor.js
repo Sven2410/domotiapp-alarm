@@ -311,36 +311,98 @@ export class DomotiappAlarmEditor extends LitElement {
       font-size: var(--ha-font-size-s, 12px);
       margin-bottom: 6px;
     }
-    input[type="text"],
-    input[type="time"],
-    select {
-      width: 100%;
-      box-sizing: border-box;
+    /* --- native invoervelden: het VAK is van ons, de CONTROL niet ---
+       (fase 10, en dit is de kern van die ronde)
+
+       De rand, de radius, de achtergrond en de padding zitten op een div.vak.
+       De control erbinnen krijgt width 100% en verder GEEN padding en GEEN rand.
+       Daarmee zijn zijn contentbox en zijn borderbox per constructie even breed,
+       en kan hij niet breder uitvallen dan de ruimte die er is — ongeacht welk
+       boxmodel de browser op dat soort control toepast.
+
+       Waarom dat niet vanzelf spreekt. Hiervoor stond hier width 100% MET
+       box-sizing border-box, padding en een rand, en dat is op Chrome
+       aantoonbaar goed: gemeten 320 px getekend bij 320 px beschikbaar. iOS past
+       box-sizing border-box echter NIET toe op input[type="time"]. Gemeten op de
+       iPhone van de eigenaar (scherm 393 CSS px, kaart 356,4, binnenruimte 324,0):
+
+           naamveld   (input[type=text]) eigen rand eindigt op 358,5   goed
+           speaker    (select)           eigen rand eindigt op 358,5   goed
+           TIJDVELD   (input[type=time]) eigen rand eindigt op 372,6   FOUT
+
+       en uit de centrering van de cijfers volgt een veldbreedte van 348,9 px —
+       precies 324 + 2*12 padding + 2*1 rand = 350. Het veld stak daarmee ~9 px
+       voorbij de kaartrand, waar het werd afgeknipt: geen afgeronde rechterhoek
+       meer, en de tijd 12,5 px uit het midden.
+
+       Een max-width 100% erbij zou NIET helpen: leest de UA de width als
+       contentbox, dan doet hij dat met max-width ook. Alleen padding 0 en rand 0
+       op de control zelf sluit het uit. */
+    .vak {
+      display: block;
       padding: 10px;
       border: 1px solid var(--divider-color);
       border-radius: 6px;
       background: var(--card-background-color, #fff);
+    }
+    .vak.tijd {
+      /* Iets meer ruimte links en rechts dan de andere velden: de cijfers zijn
+         hier 24 px en gaan er anders optisch tegenaan liggen. */
+      padding: 10px 12px;
+    }
+    /* De soortkiezer in de zoekrij is de enige die zich naar zijn inhoud voegt in
+       plaats van de rij te vullen. Dan moet ook de control erin auto zijn: een
+       width van 100% van een vak dat zelf auto is, is een rondje. */
+    .vak.auto {
+      flex: 0 0 auto;
+    }
+    .vak.auto select {
+      width: auto;
+    }
+    .vak input,
+    .vak select {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0;
+      border: 0;
+      margin: 0;
+      background: transparent;
       color: var(--primary-text-color);
       font-family: inherit;
       font-size: var(--ha-font-size-m, 14px);
     }
-    input[type="time"] {
+    .vak input[type="time"] {
       font-size: 24px;
       font-variant-numeric: tabular-nums;
-      /* Iets meer ruimte links en rechts dan de andere velden: de cijfers zijn hier
-         24 px en gaan er anders optisch tegenaan liggen. De browser tekent dit veld
-         zelf, en op een telefoon is dat een breder ding dan op een desktop. */
-      padding: 10px 12px;
+      /* iOS centreert de waarde van een tijdveld zelf; Chrome lijnt hem links uit.
+         Expliciet centreren maakt van dat verschil een keuze in plaats van een
+         toevalligheid.
+
+         Wat het NIET doet is beide platformen hetzelfde laten tonen, en dat is
+         gemeten: Chrome tekent er een eigen klokknop rechts in (CSS 315,9 → 335,5)
+         en centreert de waarde in wat daarvan overblijft, zodat de cijfers 19,9 px
+         links van het midden van de kaart uitkomen. iOS heeft die knop niet en
+         centreert wel echt. De DOOS is op beide gelijk; het beeld erbinnen niet. */
+      text-align: center;
     }
     /* Onder de 300 px wordt het veld zelf smal genoeg dat de native tijdweergave
        eronder kan lijden. Dan liever kleinere cijfers dan afgesneden cijfers. */
     @container domotiapp-editor (max-width: 300px) {
-      input[type="time"] {
+      .vak input[type="time"] {
         font-size: 20px;
       }
     }
+    /* De twee schuiven zijn het enige native control dat width 100% krijgt en
+       GEEN vak nodig heeft: ze dragen zelf geen padding en geen rand, dus hun
+       contentbox en borderbox zijn al gelijk. Gemeten: box-sizing staat hier op
+       content-box en tóch is de schuif 320 px bij 320 px beschikbaar — wat laat
+       zien dat het boxmodel niet de kwaal is maar de padding. Geef ze er dus ook
+       nooit een. */
     input[type="range"] {
       width: 100%;
+      padding: 0;
+      border: 0;
       accent-color: var(--domotiapp-accent);
     }
     .dagen {
@@ -443,6 +505,12 @@ export class DomotiappAlarmEditor extends LitElement {
       align-items: center;
       gap: 10px;
       width: 100%;
+      /* width 100% samen met eigen padding — dezelfde vorm als het tijdveld.
+         Chrome geeft een button border-box uit zijn eigen UA-stylesheet (gemeten:
+         303 px getekend bij 303 px beschikbaar), maar dat is een standaard van de
+         browser en geen afspraak van ons. Hier staat hij expliciet, zodat het niet
+         uitmaakt wat de UA vindt. */
+      box-sizing: border-box;
       padding: 8px 10px;
       border: none;
       border-bottom: 1px solid var(--divider-color);
@@ -468,7 +536,26 @@ export class DomotiappAlarmEditor extends LitElement {
       flex: 0 0 auto;
       background: var(--divider-color);
     }
+    /* De naam van een treffer is vrije tekst uit Music Assistant en heeft geen
+       bovengrens; hij moet dus kunnen krimpen. Zonder deze twee regels loopt de
+       rij over en duwt hij de soort naar buiten — gemeten bij een kaart van
+       208 px: de badge "podcast" stak 16 px buiten de kaart en de treffer meldde
+       scrollWidth 206 bij clientWidth 157. Zelfde vorm als de bevestigingsregel
+       uit fase 9, nu in een toestand die niemand eerder had opengezet. */
+    .treffer span:not(.soort) {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .treffer .soort {
+      /* Hier stond in de eerste opzet flex 0 0 auto. De mutatieproef wees uit dat
+         die regel niets doet: hem terugzetten op 0 1 auto verandert geen enkele
+         positie, ook niet samen met de mutatie hierboven (beide uitkomsten waren
+         tot op de tiende gelijk). De reden is de white-space hieronder — een badge
+         die niet mag afbreken kan niet onder zijn tekstbreedte geknepen worden.
+         Dat is exact valkuil 34, derde rij, en dezelfde bevinding als bij
+         button.tekstknop in fase 9. */
       color: var(--secondary-text-color);
       margin-left: auto;
       white-space: nowrap;
@@ -537,13 +624,15 @@ export class DomotiappAlarmEditor extends LitElement {
 
       <div class="blok">
         <label class="veld" for="tijd">Tijd</label>
-        <input
-          id="tijd"
-          type="time"
-          .value=${c.time}
-          required
-          @input=${(e) => this._zet({ time: e.target.value })}
-        />
+        <div class="vak tijd">
+          <input
+            id="tijd"
+            type="time"
+            .value=${c.time}
+            required
+            @input=${(e) => this._zet({ time: e.target.value })}
+          />
+        </div>
         ${zomertijd
           ? html`<div class="waarschuwing">
               ${this._svg(ICOON_INFO)}<span>${zomertijd}</span>
@@ -574,31 +663,35 @@ export class DomotiappAlarmEditor extends LitElement {
 
       <div class="blok">
         <label class="veld" for="naam">Naam</label>
-        <input
-          id="naam"
-          type="text"
-          .value=${c.name}
-          placeholder="Bijvoorbeeld: Werk"
-          @input=${(e) => this._zet({ name: e.target.value })}
-        />
+        <div class="vak">
+          <input
+            id="naam"
+            type="text"
+            .value=${c.name}
+            placeholder="Bijvoorbeeld: Werk"
+            @input=${(e) => this._zet({ name: e.target.value })}
+          />
+        </div>
       </div>
 
       <div class="blok">
         <label class="veld" for="speaker">Speaker</label>
         ${speakerMelding
           ? html`<div class="uitleg">${this._svg(ICOON_INFO)}<span>${speakerMelding}</span></div>`
-          : html`<select
-              id="speaker"
-              .value=${c.speaker}
-              @change=${(e) => this._zet({ speaker: e.target.value })}
-            >
-              <option value="">Kies een speaker…</option>
-              ${(speakers?.entities ?? []).map(
-                (s) => html`<option value=${s.entity_id} ?selected=${s.entity_id === c.speaker}>
-                  ${s.name}
-                </option>`,
-              )}
-            </select>`}
+          : html`<div class="vak">
+              <select
+                id="speaker"
+                .value=${c.speaker}
+                @change=${(e) => this._zet({ speaker: e.target.value })}
+              >
+                <option value="">Kies een speaker…</option>
+                ${(speakers?.entities ?? []).map(
+                  (s) => html`<option value=${s.entity_id} ?selected=${s.entity_id === c.speaker}>
+                    ${s.name}
+                  </option>`,
+                )}
+              </select>
+            </div>`}
       </div>
 
       <div class="blok">
@@ -613,32 +706,35 @@ export class DomotiappAlarmEditor extends LitElement {
             </div>`
           : nothing}
         <div class="rij" style="margin-top:8px">
-          <input
-            id="zoek"
-            type="text"
-            .value=${this._zoekterm}
-            placeholder="Zoek media"
-            @input=${(e) => {
-              this._zoekterm = e.target.value;
-            }}
-            @keydown=${(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                this._zoek();
-              }
-            }}
-          />
-          <select
-            aria-label="Soort"
-            @change=${(e) => {
-              this._soort = e.target.value;
-            }}
-            style="width:auto"
-          >
-            ${SOORTEN.map(
-              ([waarde, naam]) => html`<option value=${waarde}>${naam}</option>`,
-            )}
-          </select>
+          <div class="vak">
+            <input
+              id="zoek"
+              type="text"
+              .value=${this._zoekterm}
+              placeholder="Zoek media"
+              @input=${(e) => {
+                this._zoekterm = e.target.value;
+              }}
+              @keydown=${(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  this._zoek();
+                }
+              }}
+            />
+          </div>
+          <div class="vak auto">
+            <select
+              aria-label="Soort"
+              @change=${(e) => {
+                this._soort = e.target.value;
+              }}
+            >
+              ${SOORTEN.map(
+                ([waarde, naam]) => html`<option value=${waarde}>${naam}</option>`,
+              )}
+            </select>
+          </div>
           <button
             class="knop zoekknop"
             type="button"
@@ -692,28 +788,30 @@ export class DomotiappAlarmEditor extends LitElement {
         ${lampMelding
           ? html`<div class="uitleg">${this._svg(ICOON_INFO)}<span>${lampMelding}</span></div>`
           : html`
-              <select
-                id="lamp"
-                @change=${(e) =>
-                  this._zet({
-                    light: e.target.value
-                      ? {
-                          entity_id: e.target.value,
-                          brightness_pct: c.light?.brightness_pct ?? STANDAARD_HELDERHEID_PCT,
-                        }
-                      : null,
-                  })}
-              >
-                <option value="">Geen lamp</option>
-                ${(lampen?.entities ?? []).map(
-                  (l) => html`<option
-                    value=${l.entity_id}
-                    ?selected=${l.entity_id === c.light?.entity_id}
-                  >
-                    ${l.name}
-                  </option>`,
-                )}
-              </select>
+              <div class="vak">
+                <select
+                  id="lamp"
+                  @change=${(e) =>
+                    this._zet({
+                      light: e.target.value
+                        ? {
+                            entity_id: e.target.value,
+                            brightness_pct: c.light?.brightness_pct ?? STANDAARD_HELDERHEID_PCT,
+                          }
+                        : null,
+                    })}
+                >
+                  <option value="">Geen lamp</option>
+                  ${(lampen?.entities ?? []).map(
+                    (l) => html`<option
+                      value=${l.entity_id}
+                      ?selected=${l.entity_id === c.light?.entity_id}
+                    >
+                      ${l.name}
+                    </option>`,
+                  )}
+                </select>
+              </div>
               ${c.light
                 ? html`<label class="veld" style="margin-top:10px" for="helderheid">
                       Helderheid: ${c.light.brightness_pct}%
